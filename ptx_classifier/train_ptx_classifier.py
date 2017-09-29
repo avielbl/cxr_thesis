@@ -1,11 +1,12 @@
+import gc
 import numpy as np
 import numpy.random
 
-from aid_funcs.misc import zip_load
+from aid_funcs.misc import zip_load, zip_save
 from keraswrapper import print_model_to_file, PlotLearningCurves
 
 numpy.random.seed(1)
-
+import pickle
 import matplotlib.pyplot as plt
 import os
 import cv2
@@ -66,41 +67,66 @@ def get_model_for_patches():
 
 
 def is_ptx_case(ptx_mask):
-    if np.sum(ptx_mask) == 0:
+    if ptx_mask is None or np.sum(ptx_mask) == 0:
         return False
     else:
         return True
+def balance_classes(patches, labels):
+    pos_idx, = np.where(labels == 1) #[i for i in range(len(labels)) if labels[i] == 1]
+    neg_idx, = np.where(labels == 0) #[i for i in range(len(labels)) if labels[i] == 0]
+    nb_pos = pos_idx.shape[0]
+    nb_neg = neg_idx.shape[0]
+    print('Total of {} pos patches and {} neg patches'.format(nb_pos, nb_neg))
+    if nb_neg > nb_pos:
+        sampled_idx = numpy.random.choice(range(nb_neg), nb_pos, False)
+        neg_idx = [neg_idx[ind] for ind in sampled_idx]
+    else:
+        sampled_idx = numpy.random.choice(range(nb_pos), nb_neg, False)
+        pos_idx = [pos_idx[ind] for ind in sampled_idx]
+    all_idx = np.concatenate((pos_idx, neg_idx))
+    if all_idx.size > 0:
+        patches = patches[all_idx]
+        labels = labels[all_idx]
+    return patches, labels
 
 
-def build_patches_db(set_lst):
+def build_patches_db(set_lst, max_num_of_patches = 2000000):
     n = len(set_lst)
     max_num_of_patches = 5000000
-    patches = [] # np.zeros((max_num_of_patches, 1, patch_sz, patch_sz))
-    labels = [] # np.zeros((max_num_of_patches,), dtype=np.uint8)
-
+    patches = np.zeros((max_num_of_patches, 1, patch_sz, patch_sz))
+    labels = np.zeros((max_num_of_patches,), dtype=np.uint8)
+    patches_counter = 0
     for i in range(n):
         print('Extracting pathces from case {}/{}:'.format(i, n))
         img = set_lst[i]['img']
         lung_mask = set_lst[i]['lung_mask']
         ptx_mask = set_lst[i]['ptx_mask']
-        if is_ptx_case(set_lst[i]):
-            pos_pathces = extract_patches_from_mask(img, patch_sz, ptx_mask)
-            patches.append(pos_pathces['patches'])
-            labels.append([1] * pos_pathces['patches_count'])
+        if is_ptx_case(ptx_mask):
+            # Extracting all positive patches
+            pos_patches = extract_patches_from_mask(img, patch_sz, ptx_mask)
+            nb_pos = pos_patches['patches_count']
+            patches[patches_counter:patches_counter+nb_pos] = pos_patches['patches']
+            labels[patches_counter:patches_counter+nb_pos] = 1
+            patches_counter += nb_pos
+            # Extracting all negative patches from the lung mask minus the dilated ptx mask
             neg_mask = lung_mask.copy()
-            dilated_ptx_mask = image.safe_binary_morphology(ptx_mask,sesize=np.int(patch_sz/2) , mode='dilate')
+            dilated_ptx_mask = image.safe_binary_morphology(ptx_mask,sesize=np.int(patch_sz/2), mode='dilate')
             neg_mask[dilated_ptx_mask == 255] = 0
             neg_patches = extract_patches_from_mask(img, patch_sz, neg_mask)
-            patches.append(neg_patches['patches'])
-            labels.append([0] * neg_patches['patches_count'])
-            print('Extracted {} positive patches and {} negatives'.format(pos_pathces['patches_count'], neg_patches['patches_count']))
+            nb_neg = neg_patches['patches_count']
+            patches[patches_counter:patches_counter+nb_neg] = neg_patches['patches']
+            labels[patches_counter:patches_counter+nb_neg] = 0
+            patches_counter += nb_neg
+            print('Extracted {} positive patches and {} negatives'.format(nb_pos, nb_neg))
         else:
             neg_patches = extract_patches_from_mask(img, patch_sz, lung_mask)
-            patches.append(neg_patches['patches'])
-            labels.append([0] * neg_patches['patches_count'])
-            print('Extracted {} negative patches'.format(neg_patches['patches_count']))
-
-    return patches, labels
+            nb_neg = neg_patches['patches_count']
+            patches[patches_counter:patches_counter + nb_neg] = neg_patches['patches']
+            labels[patches_counter:patches_counter + nb_neg] = 0
+            patches_counter += nb_neg
+            print('Extracted {} negative patches'.format(nb_neg))
+    # Removing redundant pre-allocated elements
+    return patches, labels, patches_counter
 
 
 def extract_patches_from_mask(img, patch_size, mask=None, num_of_patches=10000, stride=1, patch_pos_flag=False,
@@ -108,7 +134,7 @@ def extract_patches_from_mask(img, patch_size, mask=None, num_of_patches=10000, 
     sz = img.shape
     if patch_size % 2 == 0:
         l_support = int(patch_size / 2 - 1)
-        r_support = int(patch_size / 2)
+        r_support = int(patch_size / 2) + 1
     else:
         l_support = int(patch_size / 2)
         r_support = int(patch_size / 2)
@@ -117,10 +143,10 @@ def extract_patches_from_mask(img, patch_size, mask=None, num_of_patches=10000, 
         mask = np.zeros(sz, dtype=np.uint8)
     mask_bbox = measure.regionprops(mask)
     mask_bbox = mask_bbox[0].bbox
-    min_row = mask_bbox[0]
-    max_row = mask_bbox[2]
-    min_col = mask_bbox[1]
-    max_col = mask_bbox[3]
+    min_row = max((0, mask_bbox[0] - pad_size))
+    max_row = min((sz[0], mask_bbox[2] + pad_size))
+    min_col = max((0, mask_bbox[1] - pad_size))
+    max_col = min((sz[1], mask_bbox[3] + pad_size))
     cropped_img = img[min_row:max_row,min_col:max_col]
     cropped_mask = mask[min_row:max_row,min_col:max_col]
     cropped_sz = cropped_img.shape
@@ -146,6 +172,8 @@ def extract_patches_from_mask(img, patch_size, mask=None, num_of_patches=10000, 
         patches_idx = [patches_idx[ind] for ind in sampled_idx]
         patches = [patches[ind] for ind in sampled_idx]
         patches_count = len(sampled_idx)
+    patches = np.asanyarray(patches)
+    patches = np.expand_dims(patches, axis=1)
     return {'patches': patches, 'patches_idx': patches_idx, 'patches_count': patches_count}
 
 
@@ -226,29 +254,57 @@ def extract_patches_from_mask(img, patch_size, mask=None, num_of_patches=10000, 
 #     return images_arr_out, masks_arr_out
 
 
-def train_ptx_classifier():
+def train_ptx_classifier(prep_data=True):
     print('-' * 30)
     print('Loading data...')
     print('-' * 30)
-    data_lst = zip_load(os.path.join(training_path, 'train_set.pkl'))
-    nb_train_total = len(data_lst)
-    val_idx = np.random.choice(range(nb_train_total), int(0.3 * nb_train_total))
+    if prep_data:
+        data_lst = zip_load(os.path.join(training_path, 'train_set.pkl'))
+        nb_train_total = len(data_lst)
+        val_idx = np.random.choice(range(nb_train_total), int(0.3 * nb_train_total))
 
-    # Partition to train and val sets
-    n_val = len(val_idx)
-    n_train = nb_train_total - n_val
-    print('Partition to validation (n={}) and training (n={}) sets'.format(n_val, n_train))
-    val_data_lst = []
-    train_data_lst = []
-    for i in range(nb_train_total):
-        if i in val_idx:
-            val_data_lst.append(data_lst[i])
-        else:
-            train_data_lst.append(data_lst[i])
-    print('Extracting patches from training images')
-    val_data_patches, val_data_labels = build_patches_db(val_data_lst)
-    print('Extracting patches from validation images')
-    train_data_patches, train_data_labels = build_patches_db(train_data_lst)
+        # Partition to train and val sets
+        n_val = len(val_idx)
+        n_train = nb_train_total - n_val
+        print('Partition to validation (n={}) and training (n={}) sets'.format(n_val, n_train))
+        val_data_lst = []
+        train_data_lst = []
+        for i in range(nb_train_total):
+            if i in val_idx:
+                val_data_lst.append(data_lst[i])
+            else:
+                train_data_lst.append(data_lst[i])
+        print('Extracting patches from validation images')
+        val_data_patches, val_data_labels, patches_counter = build_patches_db(val_data_lst, max_num_of_patches)
+        val_data_patches = val_data_patches[:patches_counter]
+        val_data_labels = val_data_labels[:patches_counter]
+        val_data_patches, val_data_labels = balance_classes(val_data_patches, val_data_labels)
+        pickle.dump(val_data_patches, open(os.path.join(training_path, 'val_patches.pkl'), 'wb'), protocol=4)
+        pickle.dump(val_data_labels, open(os.path.join(training_path, 'val_labels.pkl'), 'wb'), protocol=4)
+        # zip_save(val_data_patches, os.path.join(training_path, 'val_patches.pkl'))
+        # zip_save(val_data_labels, os.path.join(training_path, 'val_labels.pkl'))
+
+        del val_data_patches
+        del val_data_labels
+        gc.collect()
+
+        print('Extracting patches from training images')
+        train_data_patches, train_data_labels, patches_counter = build_patches_db(train_data_lst, max_num_of_patches)
+        train_data_patches = train_data_patches[:patches_counter]
+        train_data_labels = train_data_labels[:patches_counter]
+        train_data_patches, train_data_labels = balance_classes(train_data_patches, train_data_labels)
+        pickle.dump(train_data_patches, open(os.path.join(training_path, 'train_patches.pkl'), 'wb'), protocol=4)
+        pickle.dump(train_data_labels, open(os.path.join(training_path, 'train_labels.pkl'), 'wb'), protocol=4)
+        # zip_save(train_data_patches, os.path.join(training_path, 'train_patches.pkl'))
+        # zip_save(train_data_labels, os.path.join(training_path, 'train_labels.pkl'))
+        del train_data_patches
+        del train_data_labels
+        gc.collect()
+    else:
+        val_data_patches = zip_load(os.path.join(training_path, 'val_patches.pkl'))
+        val_data_labels = zip_load(os.path.join(training_path, 'val_labels.pkl'))
+        train_data_patches = zip_load(os.path.join(training_path, 'train_patches.pkl'))
+        train_data_labels = zip_load(os.path.join(training_path, 'train_labels.pkl'))
 
     print('Creating and compiling model')
     nb_epochs = 100
@@ -267,10 +323,9 @@ def train_ptx_classifier():
     print('-' * 30)
     print('Fitting model...')
     print('-' * 30)
-    # TODO: create from patches lists ndarrays
-    # model.fit(train_image_arr, train_seg_map_arr, batch_size=batch_size, nb_epoch=nb_epochs, verbose=1,
-    #           validation_data=(val_images_arr, val_seg_map_arr), shuffle=True,
-    #           callbacks=[plot_curves_callback, model_checkpoint, early_stopping, reduce_lr_on_plateau])
+    model.fit(train_data_patches, train_data_labels, batch_size=batch_size, nb_epoch=nb_epochs, verbose=1,
+              validation_data=(val_data_patches, val_data_labels), shuffle=True,
+              callbacks=[plot_curves_callback, model_checkpoint, early_stopping, reduce_lr_on_plateau])
     print("Done!")
 
 
