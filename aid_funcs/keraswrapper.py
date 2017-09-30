@@ -148,12 +148,39 @@ def print_model_to_file(model, file_name=None):
     :param file_name: (optional) name of image file. Default to 'model_HH_MM_dd_mm_yy.png'
     :return: None
     """
-    from keras.utils import plot_model
+    from keras.utils.vis_utils import plot_model
     import time
     if file_name == None:
         file_name = 'model_' + time.strftime("%H_%M_%d_%m_%Y") + '.png'
-        plot_model(model, to_file=file_name, show_shapes=True)
+    plot_model(model, to_file=file_name, show_shapes=True)
 
+
+def plot_first_layer(model):
+    layer = model.layers[0]
+    filters = layer.get_weights()[0]
+    nb_filters = filters.shape[3]
+    filt_sz = filters.shape[0]
+    rows_of_filts = np.ceil(np.sqrt(nb_filters)).astype(int)
+    cols_of_filts = np.floor(np.sqrt(nb_filters)).astype(int)
+    pad_sz = 2
+    rows = filt_sz * rows_of_filts + pad_sz * (rows_of_filts - 1)
+    cols = filt_sz * cols_of_filts + pad_sz * (cols_of_filts - 1)
+    out_img = np.zeros((rows, cols))
+    cur_row = 0
+    cur_col = 0
+    for i in range(nb_filters):
+        out_img[cur_row:cur_row+filt_sz, cur_col:cur_col+filt_sz] = np.squeeze(filters[:,:,:,i])
+        cur_col += filt_sz + pad_sz
+        if cur_col > cols:
+            cur_col = 0
+            cur_row += filt_sz + pad_sz
+
+    fig, ax = plt.subplots()
+    cax = ax.imshow(out_img, cmap='gray')
+    ax.axes.get_xaxis().set_visible(False)
+    ax.axes.get_yaxis().set_visible(False)
+    cbar = fig.colorbar(cax)
+    fig.colorbar()
 
 def optimize_ticks(ax):
     xmax = ax.dataLim.max[0]
