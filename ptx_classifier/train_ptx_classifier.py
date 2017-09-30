@@ -31,26 +31,26 @@ from utils import *
 def get_model_for_patches():
     model = Sequential()
 
-    model.add(Conv2D(16, (5, 5), padding='same', input_shape=(1, patch_sz, patch_sz)))
+    model.add(Conv2D(64, (5, 5), padding='same', input_shape=(1, patch_sz, patch_sz)))
     model.add(LeakyReLU(0.01))
     model.add(MaxPooling2D(pool_size=(2, 2)))
 
-    model.add(Conv2D(32, (5, 5), padding='same'))
+    model.add(Conv2D(64, (5, 5), padding='same'))
     model.add(LeakyReLU(0.01))
     model.add(MaxPooling2D(pool_size=(2, 2)))
 
-    model.add(Conv2D(64, (3, 3), padding='same'))
+    model.add(Conv2D(128, (3, 3), padding='same'))
     model.add(LeakyReLU(0.01))
     model.add(MaxPooling2D(pool_size=(2, 2)))
     model.add(Dropout(0.5))
 
-    model.add(Conv2D(128, (3, 3), padding='same'))
+    model.add(Conv2D(256, (3, 3), padding='same'))
     model.add(LeakyReLU(0.01))
     model.add(MaxPooling2D(pool_size=(4, 4)))
 
     model.add(Flatten())
 
-    model.add(Dense(64))
+    model.add(Dense(128))
     model.add(LeakyReLU(0.01))
     model.add(Dropout(0.5))
 
@@ -316,7 +316,7 @@ def train_ptx_classifier(prep_data=False):
     val_data_labels = to_categorical(val_data_labels)
     print('Creating and compiling model')
     nb_epochs = 100
-    batch_size = 256
+    batch_size = 1000
     model = get_model_for_patches()
 
     # print_model_to_file(model)
