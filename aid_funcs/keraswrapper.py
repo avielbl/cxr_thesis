@@ -179,7 +179,7 @@ class PlotLearningCurves(keras.callbacks.Callback):
     model.fit(X, Y, nb_epoch=10, batch_size=10, callbacks=[plot_curves_callback])
 
     '''
-    def __init__(self, metric_name='binary_accuracy', model_name=''):
+    def __init__(self, metric_name='acc', model_name=''):
         self.metric_name=metric_name
         self.model_name = model_name
         self.metric = []
@@ -194,7 +194,7 @@ class PlotLearningCurves(keras.callbacks.Callback):
 
         # generating the general structure of the figure and plots
         # left-sided graph for the metric
-        from .plot import set_curr_fig_size
+        from plot import set_curr_fig_size
         fig, (ax1, ax2) = plt.subplots(ncols=2)
         set_curr_fig_size(0.8)
         str_title = self.metric_name.replace("_", " ")

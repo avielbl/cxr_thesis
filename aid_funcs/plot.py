@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from tkinter import *
 from tkinter import ttk
 from functools import partial
-from .image import im_rescale
+from image import im_rescale
 
 def get_screen_size():
     """Returns the size of current screen in pixels as ndarray [width. height]"""

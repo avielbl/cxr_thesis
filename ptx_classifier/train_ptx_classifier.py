@@ -16,7 +16,7 @@ from collections import OrderedDict
 
 from keras.models import Model, Sequential
 from keras.layers import Input, merge, Convolution2D, MaxPooling2D, UpSampling2D, Dropout, Activation, Masking, Flatten, \
-    Dense
+    Dense, Conv2D
 from keras.optimizers import SGD, rmsprop, Adam
 from keras.callbacks import ModelCheckpoint, LearningRateScheduler, EarlyStopping, ReduceLROnPlateau
 from keras.layers.advanced_activations import LeakyReLU, PReLU
@@ -31,20 +31,20 @@ from utils import *
 def get_model_for_patches():
     model = Sequential()
 
-    model.add(Convolution2D(16, 5, 5, border_mode='same', input_shape=(1, patch_sz, patch_sz)))
+    model.add(Conv2D(16, (5, 5), padding='same', input_shape=(1, patch_sz, patch_sz)))
     model.add(LeakyReLU(0.01))
     model.add(MaxPooling2D(pool_size=(2, 2)))
 
-    model.add(Convolution2D(32, 5, 5, border_mode='same'))
+    model.add(Conv2D(32, (5, 5), padding='same'))
     model.add(LeakyReLU(0.01))
     model.add(MaxPooling2D(pool_size=(2, 2)))
 
-    model.add(Convolution2D(64, 3, 3, border_mode='same'))
+    model.add(Conv2D(64, (3, 3), padding='same'))
     model.add(LeakyReLU(0.01))
     model.add(MaxPooling2D(pool_size=(2, 2)))
     model.add(Dropout(0.25))
 
-    model.add(Convolution2D(128, 3, 3, border_mode='same'))
+    model.add(Conv2D(128, (3, 3), padding='same'))
     model.add(LeakyReLU(0.01))
     model.add(MaxPooling2D(pool_size=(4, 4)))
 
@@ -54,7 +54,7 @@ def get_model_for_patches():
     model.add(LeakyReLU(0.01))
     model.add(Dropout(0.25))
 
-    model.add(Dense(1))
+    model.add(Dense(2))
     model.add(Activation('softmax'))
     lr = 0.0001
     optim_fun = Adam(lr=lr)
@@ -90,10 +90,9 @@ def balance_classes(patches, labels):
     return patches, labels
 
 
-def build_patches_db(set_lst, max_num_of_patches = 2000000):
+def build_patches_db(set_lst):
     n = len(set_lst)
-    max_num_of_patches = 5000000
-    patches = np.zeros((max_num_of_patches, 1, patch_sz, patch_sz))
+    patches = np.zeros((max_num_of_patches, 1, patch_sz, patch_sz), dtype=np.float32)
     labels = np.zeros((max_num_of_patches,), dtype=np.uint8)
     patches_counter = 0
     for i in range(n):
@@ -254,7 +253,7 @@ def extract_patches_from_mask(img, patch_size, mask=None, num_of_patches=10000, 
 #     return images_arr_out, masks_arr_out
 
 
-def train_ptx_classifier(prep_data=True):
+def train_ptx_classifier(prep_data=False):
     print('-' * 30)
     print('Loading data...')
     print('-' * 30)
@@ -267,31 +266,34 @@ def train_ptx_classifier(prep_data=True):
         n_val = len(val_idx)
         n_train = nb_train_total - n_val
         print('Partition to validation (n={}) and training (n={}) sets'.format(n_val, n_train))
-        val_data_lst = []
+        # val_data_lst = []
         train_data_lst = []
         for i in range(nb_train_total):
-            if i in val_idx:
-                val_data_lst.append(data_lst[i])
-            else:
+            # if i in val_idx:
+                # val_data_lst.append(data_lst[i])
+            # else:
+            if i not in val_idx:
                 train_data_lst.append(data_lst[i])
-        print('Extracting patches from validation images')
-        val_data_patches, val_data_labels, patches_counter = build_patches_db(val_data_lst, max_num_of_patches)
-        val_data_patches = val_data_patches[:patches_counter]
-        val_data_labels = val_data_labels[:patches_counter]
-        val_data_patches, val_data_labels = balance_classes(val_data_patches, val_data_labels)
-        pickle.dump(val_data_patches, open(os.path.join(training_path, 'val_patches.pkl'), 'wb'), protocol=4)
-        pickle.dump(val_data_labels, open(os.path.join(training_path, 'val_labels.pkl'), 'wb'), protocol=4)
-        # zip_save(val_data_patches, os.path.join(training_path, 'val_patches.pkl'))
-        # zip_save(val_data_labels, os.path.join(training_path, 'val_labels.pkl'))
-
-        del val_data_patches
-        del val_data_labels
+        del data_lst
         gc.collect()
+        # print('Extracting patches from validation images')
+        # val_data_patches, val_data_labels, patches_counter = build_patches_db(val_data_lst)
+        # val_data_patches = val_data_patches[:patches_counter]
+        # val_data_labels = val_data_labels[:patches_counter]
+        # gc.collect()
+        # val_data_patches, val_data_labels = balance_classes(val_data_patches, val_data_labels)
+        # pickle.dump(val_data_patches, open(os.path.join(training_path, 'val_patches.pkl'), 'wb'), protocol=4)
+        # pickle.dump(val_data_labels, open(os.path.join(training_path, 'val_labels.pkl'), 'wb'), protocol=4)
+        #
+        # del val_data_patches
+        # del val_data_labels
+        # gc.collect()
 
         print('Extracting patches from training images')
-        train_data_patches, train_data_labels, patches_counter = build_patches_db(train_data_lst, max_num_of_patches)
+        train_data_patches, train_data_labels, patches_counter = build_patches_db(train_data_lst)
         train_data_patches = train_data_patches[:patches_counter]
         train_data_labels = train_data_labels[:patches_counter]
+        gc.collect()
         train_data_patches, train_data_labels = balance_classes(train_data_patches, train_data_labels)
         pickle.dump(train_data_patches, open(os.path.join(training_path, 'train_patches.pkl'), 'wb'), protocol=4)
         pickle.dump(train_data_labels, open(os.path.join(training_path, 'train_labels.pkl'), 'wb'), protocol=4)
@@ -301,17 +303,23 @@ def train_ptx_classifier(prep_data=True):
         del train_data_labels
         gc.collect()
     else:
-        val_data_patches = zip_load(os.path.join(training_path, 'val_patches.pkl'))
-        val_data_labels = zip_load(os.path.join(training_path, 'val_labels.pkl'))
-        train_data_patches = zip_load(os.path.join(training_path, 'train_patches.pkl'))
-        train_data_labels = zip_load(os.path.join(training_path, 'train_labels.pkl'))
-
+        # val_data_patches = zip_load(os.path.join(training_path, 'val_patches.pkl'))
+        val_data_patches = pickle.load(open(os.path.join(training_path, 'val_patches.pkl'), 'rb'))
+        val_data_labels = pickle.load(open(os.path.join(training_path, 'val_labels.pkl'), 'rb'))
+        train_data_patches = pickle.load(open(os.path.join(training_path, 'train_patches.pkl'), 'rb'))
+        train_data_labels = pickle.load(open(os.path.join(training_path, 'train_labels.pkl'), 'rb'))
+        # val_data_labels = zip_load(os.path.join(training_path, 'val_labels.pkl'))
+        # train_data_patches = zip_load(os.path.join(training_path, 'train_patches.pkl'))
+        # train_data_labels = zip_load(os.path.join(training_path, 'train_labels.pkl'))
+    from keras.utils.np_utils import to_categorical
+    train_data_labels = to_categorical(train_data_labels)
+    val_data_labels = to_categorical(val_data_labels)
     print('Creating and compiling model')
     nb_epochs = 100
     batch_size = 256
     model = get_model_for_patches()
 
-    print_model_to_file(model)
+    # print_model_to_file(model)
 
     # Defining callbacks
     model_file_name = 'ptx_model_' + time.strftime("%H_%M_%d_%m_%Y") + '.hdf5'
@@ -323,7 +331,7 @@ def train_ptx_classifier(prep_data=True):
     print('-' * 30)
     print('Fitting model...')
     print('-' * 30)
-    model.fit(train_data_patches, train_data_labels, batch_size=batch_size, nb_epoch=nb_epochs, verbose=1,
+    model.fit(train_data_patches, train_data_labels, batch_size=batch_size, epochs=nb_epochs, verbose=1,
               validation_data=(val_data_patches, val_data_labels), shuffle=True,
               callbacks=[plot_curves_callback, model_checkpoint, early_stopping, reduce_lr_on_plateau])
     print("Done!")
