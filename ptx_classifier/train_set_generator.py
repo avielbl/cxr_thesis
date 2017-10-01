@@ -24,10 +24,10 @@ from keras.layers.advanced_activations import LeakyReLU, PReLU
 from keras import backend as K
 import keras.callbacks
 
-from ..aid_funcs import CXRLoadNPrep as clp
-from ..aid_funcs import image
+from aid_funcs import CXRLoadNPrep as clp
+from aid_funcs import image
 
-from .utils import *
+from utils import *
 
 # Creating list of images
 pos_path = os.path.join(training_path, 'pos_cases')
@@ -82,7 +82,7 @@ for im_count, curr_img_path in enumerate(imgs_path_lst):
         std_val = np.nanstd(nan_img)
         out_img = img.copy().astype(np.float32)
         out_img -= mean_val
-        out_img /= std_val
+        # out_img /= std_val
         out_img[np.isnan(out_img)] = np.nanmax(out_img)
         train_set_lst.append({'img': out_img, 'lung_mask': lung_mask, 'ptx_mask': ptx_mask})
     print("Loaded image number %i" % im_count)
