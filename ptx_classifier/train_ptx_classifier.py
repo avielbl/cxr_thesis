@@ -1,11 +1,11 @@
 import gc
 import numpy as np
 import numpy.random
+numpy.random.seed(1)
 
 from aid_funcs.misc import zip_load, zip_save
 from keraswrapper import print_model_to_file, PlotLearningCurves
 
-numpy.random.seed(1)
 import pickle
 import matplotlib.pyplot as plt
 import os
@@ -14,14 +14,11 @@ import time
 from skimage import measure
 from collections import OrderedDict
 
-from keras.models import Model, Sequential
-from keras.layers import Input, merge, Convolution2D, MaxPooling2D, UpSampling2D, Dropout, Activation, Masking, Flatten, \
-    Dense, Conv2D
+from keras.models import Sequential
+from keras.layers import MaxPooling2D, Dropout, Activation, Flatten, Dense, Conv2D
 from keras.optimizers import SGD, rmsprop, Adam
 from keras.callbacks import ModelCheckpoint, LearningRateScheduler, EarlyStopping, ReduceLROnPlateau
 from keras.layers.advanced_activations import LeakyReLU, PReLU
-from keras import backend as K
-import keras.callbacks
 
 from aid_funcs import image
 
