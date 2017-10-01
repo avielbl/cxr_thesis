@@ -159,3 +159,13 @@ def normalize_slices(img_arr):
     img_arr -= mean_val
     img_arr /= std_val
     return img_arr
+
+def save_to_h5(data, file_name):
+    with h5py.File(file_name, 'w') as hf:
+        hf.create_dataset('name-of-dataset', data=data)
+
+def load_from_h5(file_name):
+    with h5py.File(file_name, 'r') as hf:
+        data = hf['name-of-dataset'][:]
+
+    return data
