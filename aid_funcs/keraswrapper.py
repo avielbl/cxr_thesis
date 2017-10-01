@@ -186,6 +186,7 @@ class PlotLearningCurves(keras.callbacks.Callback):
         self.val_metric = []
         self.loss = []
         self.val_loss = []
+        self.file_name = 'l_curve_' + self.model_name + '_' + time.strftime("%H_%d_%m_%Y") + '.png'
 
         self.xdata = list([])  # holds the epochs for x axis
 
@@ -235,6 +236,5 @@ class PlotLearningCurves(keras.callbacks.Callback):
 
         fig.canvas.draw()
         plt.pause(1e-6)
-        file_name = 'l_curve_' + self.model_name + '_' + time.strftime("%H_%d_%m_%Y") + '.png'
-        fig.savefig(file_name)
+        fig.savefig(self.file_name)
 
