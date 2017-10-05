@@ -10,11 +10,6 @@ from aid_funcs.misc import zip_load, save_to_h5
 from utils import *
 from aid_funcs import image
 
-def is_ptx_case(ptx_mask):
-    if ptx_mask is None or np.sum(ptx_mask) == 0:
-        return False
-    else:
-        return True
 
 
 def balance_classes(patches, labels):
@@ -36,7 +31,7 @@ def balance_classes(patches, labels):
     return patches, labels
 
 
-def build_patches_db(set_lst):
+def build_patches_db(set_lst, set):
     n = len(set_lst)
     patches = np.zeros((max_num_of_patches, 1, patch_sz, patch_sz), dtype=np.float32)
     labels = np.zeros((max_num_of_patches,), dtype=np.uint8)
@@ -71,7 +66,12 @@ def build_patches_db(set_lst):
             patches_counter += nb_neg
             print('Extracted {} negative patches'.format(nb_neg))
     # Removing redundant pre-allocated elements
-    return patches, labels, patches_counter
+    patches = patches[:patches_counter]
+    labels = labels[:patches_counter]
+    patches, labels = balance_classes(patches, labels)
+    save_to_h5(patches, os.path.join(training_path, set+'_patches.h5'))
+    save_to_h5(labels, os.path.join(training_path, set+'_labels.h5'))
+
 
 
 def extract_patches_from_mask(img, patch_size, mask=None, num_of_patches=10000, stride=1, patch_pos_flag=False,
@@ -122,51 +122,10 @@ def extract_patches_from_mask(img, patch_size, mask=None, num_of_patches=10000, 
     return {'patches': patches, 'patches_idx': patches_idx, 'patches_count': patches_count}
 
 
-
-data_lst = zip_load(os.path.join(training_path, 'train_set.pkl'))
-nb_train_total = len(data_lst)
-val_idx = np.random.choice(range(nb_train_total), int(0.3 * nb_train_total))
-
-# Partition to train and val sets
-n_val = len(val_idx)
-n_train = nb_train_total - n_val
-print('Partition to validation (n={}) and training (n={}) sets'.format(n_val, n_train))
-val_data_lst = []
-train_data_lst = []
-for i in range(nb_train_total):
-    if i in val_idx:
-        val_data_lst.append(data_lst[i])
-    else:
-    # if i not in val_idx:
-        train_data_lst.append(data_lst[i])
-del data_lst
-gc.collect()
+train_data_lst, val_data_lst = train_val_partition()
 print('Extracting patches from validation images')
-val_data_patches, val_data_labels, patches_counter = build_patches_db(val_data_lst)
-val_data_patches = val_data_patches[:patches_counter]
-val_data_labels = val_data_labels[:patches_counter]
-gc.collect()
-val_data_patches, val_data_labels = balance_classes(val_data_patches, val_data_labels)
-save_to_h5(val_data_patches, os.path.join(training_path, 'val_patches.h5'))
-save_to_h5(val_data_labels, os.path.join(training_path, 'val_labels.h5'))
-
-del val_data_patches
-del val_data_labels
-del val_data_lst
-gc.collect()
+build_patches_db(val_data_lst, 'val')
 
 print('Extracting patches from training images')
-train_data_patches, train_data_labels, patches_counter = build_patches_db(train_data_lst)
-train_data_patches = train_data_patches[:patches_counter]
-train_data_labels = train_data_labels[:patches_counter]
+build_patches_db(train_data_lst, 'train')
 
-del train_data_lst
-gc.collect()
-
-train_data_patches, train_data_labels = balance_classes(train_data_patches, train_data_labels)
-save_to_h5(train_data_patches, os.path.join(training_path, 'train_patches.h5'))
-save_to_h5(train_data_labels, os.path.join(training_path, 'train_labels.h5'))
-
-del train_data_patches
-del train_data_labels
-gc.collect()
