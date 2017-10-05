@@ -1,5 +1,3 @@
-import pickle
-import sys
 import numpy as np
 import numpy.random
 
@@ -7,22 +5,10 @@ from misc import zip_save
 
 numpy.random.seed(1)
 
-import matplotlib.pyplot as plt
 import os
-import cv2
-import time
 from skimage import measure
-from collections import OrderedDict
-from drawnow import drawnow
 from scipy.misc import imread
 
-from keras.models import Model
-from keras.layers import Input, merge, Convolution2D, MaxPooling2D, UpSampling2D, Dropout, Activation, Masking
-from keras.optimizers import SGD, rmsprop
-from keras.callbacks import ModelCheckpoint, LearningRateScheduler, EarlyStopping, ReduceLROnPlateau
-from keras.layers.advanced_activations import LeakyReLU, PReLU
-from keras import backend as K
-import keras.callbacks
 
 from aid_funcs import CXRLoadNPrep as clp
 from aid_funcs import image
@@ -56,6 +42,7 @@ for im_count, curr_img_path in enumerate(imgs_path_lst):
         if os.path.isfile(ptx_path):
             ptx_mask = imread(ptx_path, mode='L')
             ptx_mask = image.imresize(ptx_mask, img.shape)
+            ptx_mask[lung_mask == 0] = 0
         else:
             ptx_mask = None
 
@@ -82,7 +69,7 @@ for im_count, curr_img_path in enumerate(imgs_path_lst):
         std_val = np.nanstd(nan_img)
         out_img = img.copy().astype(np.float32)
         out_img -= mean_val
-        # out_img /= std_val
+        out_img /= std_val
         out_img[np.isnan(out_img)] = np.nanmax(out_img)
         train_set_lst.append({'img': out_img, 'lung_mask': lung_mask, 'ptx_mask': ptx_mask})
     print("Loaded image number %i" % im_count)
