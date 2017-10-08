@@ -1,6 +1,6 @@
 import numpy as np
 import os
-from misc import zip_load
+from aid_funcs.misc import zip_load
 
 training_path = r'C:\projects\CXR_thesis\data_repo\TRAINING'
 model_path = r'ptx_model_13_38_30_09_2017.hdf5'
