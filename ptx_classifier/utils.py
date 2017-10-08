@@ -1,14 +1,26 @@
 import numpy as np
 import os
+import matplotlib.pyplot as plt
+from aid_funcs.plot import show_image_with_overlay
 from aid_funcs.misc import zip_load
 
-training_path = r'C:\projects\CXR_thesis\data_repo\TRAINING'
+training_path = r'C:\Users\admin\OneDrive - Imedis Medical\data_repo\TRAINING'
 model_path = r'ptx_model_13_38_30_09_2017.hdf5'
 
-im_size = 1024
+im_size = 512
 patch_sz = 32
 smooth = 1.
 max_num_of_patches = 4000000
+
+def display_train_set():
+    pos_path = os.path.join(training_path, 'pos_cases')
+    neg_path = os.path.join(training_path, 'neg_cases')
+    imgs_names_lst = os.listdir(pos_path) + os.listdir(neg_path)
+    train_set = zip_load(os.path.join(training_path, 'train_set.pkl'))
+    for i, case in enumerate(train_set):
+        show_image_with_overlay(case['img'], case['lung_mask'], case['ptx_mask'], imgs_names_lst[i])
+        plt.pause(1e-2)
+        plt.waitforbuttonpress()
 
 
 def is_ptx_case(ptx_mask):
