@@ -3,8 +3,9 @@ from numpy.random import seed as npseed
 npseed(1)
 from keras.models import Model
 from keras.models import load_model as keras_load_model
-from keras.layers import Input, merge, Convolution2D, MaxPooling2D, UpSampling2D, Dropout
+from keras.layers import Input, merge, MaxPooling2D, UpSampling2D, Dropout, Conv2D
 from keras.layers.advanced_activations import LeakyReLU
+from keras.layers.merge import concatenate
 from keras.optimizers import SGD, rmsprop, Adam
 import keras.callbacks
 from keras import backend as K
@@ -79,15 +80,15 @@ def get_unet(im_size, filters=64, filter_size=3, dropout_val=0.5, lrelu_alpha=0.
         :param filters_mult: scalar multiplication factor for the number of filters
         :return: tuple of (conv_layer, pool_layer)
         '''
-        conv_layer = Convolution2D(filters * filters_mult,
-                                   filter_size, filter_size,
-                                   init='he_normal',
-                                   border_mode='same')(in_layer)
+        conv_layer = Conv2D(filters * filters_mult,
+                            (filter_size, filter_size),
+                            kernel_initializer='he_normal',
+                            padding='same')(in_layer)
         conv_layer = LeakyReLU(lrelu_alpha)(conv_layer)
-        conv_layer = Convolution2D(filters * filters_mult,
-                                   filter_size, filter_size,
-                                   init='he_normal',
-                                   border_mode='same')(conv_layer)
+        conv_layer = Conv2D(filters * filters_mult,
+                            (filter_size, filter_size),
+                            kernel_initializer='he_normal',
+                            padding='same')(conv_layer)
         conv_layer = LeakyReLU(lrelu_alpha)(conv_layer)
         pool_layer = MaxPooling2D(pool_size=(2, 2))(conv_layer)
         return conv_layer, pool_layer
@@ -102,16 +103,16 @@ def get_unet(im_size, filters=64, filter_size=3, dropout_val=0.5, lrelu_alpha=0.
         :param filters_mult: scalar multiplication factor for the number of filters
         :return: last conv layer in the block
         '''
-        up_layer = merge([UpSampling2D(size=(2, 2))(low_res_layer), high_res_layer], mode='concat', concat_axis=1)
-        conv_layer = Convolution2D(filters * filters_mult,
-                                   filter_size, filter_size,
-                                   init='he_normal',
-                                   border_mode='same')(up_layer)
+        up_layer = concatenate([UpSampling2D(size=(2, 2))(low_res_layer), high_res_layer], axis=1)
+        conv_layer = Conv2D(filters * filters_mult,
+                            (filter_size, filter_size),
+                            kernel_initializer='he_normal',
+                            padding='same')(up_layer)
         conv_layer = LeakyReLU(lrelu_alpha)(conv_layer)
-        conv_layer = Convolution2D(filters * filters_mult,
-                                   filter_size, filter_size,
-                                   init='he_normal',
-                                   border_mode='same')(conv_layer)
+        conv_layer = Conv2D(filters * filters_mult,
+                            (filter_size, filter_size),
+                            kernel_initializer='he_normal',
+                            padding='same')(conv_layer)
         conv_layer = LeakyReLU(lrelu_alpha)(conv_layer)
         return conv_layer
 
@@ -131,9 +132,9 @@ def get_unet(im_size, filters=64, filter_size=3, dropout_val=0.5, lrelu_alpha=0.
 
     conv9 = Dropout(dropout_val)(conv9)
 
-    conv10 = Convolution2D(1, 1, 1, activation='sigmoid', init='he_normal')(conv9)
+    conv10 = Conv2D(1, (1, 1), activation='sigmoid', kernel_initializer='he_normal')(conv9)
 
-    model = Model(input=inputs, output=conv10)
+    model = Model(inputs=inputs, outputs=conv10)
     if optim_fun == None:
         optim_fun = SGD(**kwargs)
     model.compile(optimizer=optim_fun, loss=loss_fun, metrics=[metrics])
