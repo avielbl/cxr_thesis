@@ -158,11 +158,13 @@ def print_model_to_file(model, file_name=None):
 
 def plot_first_layer(model):
     layer = model.layers[0]
+    if 'input' in layer.name:
+        layer = model.layers[1]
     filters = layer.get_weights()[0]
     nb_filters = filters.shape[3]
     filt_sz = filters.shape[0]
     rows_of_filts = np.ceil(np.sqrt(nb_filters)).astype(int)
-    cols_of_filts = np.floor(np.sqrt(nb_filters)).astype(int)
+    cols_of_filts = np.ceil(np.sqrt(nb_filters)).astype(int)
     pad_sz = 2
     rows = filt_sz * rows_of_filts + pad_sz * (rows_of_filts - 1)
     cols = filt_sz * cols_of_filts + pad_sz * (cols_of_filts - 1)
@@ -180,8 +182,7 @@ def plot_first_layer(model):
     cax = ax.imshow(out_img, cmap='gray')
     ax.axes.get_xaxis().set_visible(False)
     ax.axes.get_yaxis().set_visible(False)
-    cbar = fig.colorbar(cax)
-    fig.colorbar()
+    fig.colorbar(cax)
 
 def optimize_ticks(ax):
     xmax = ax.dataLim.max[0]
