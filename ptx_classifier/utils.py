@@ -1,4 +1,5 @@
 import numpy as np
+np.random.seed(1)
 import os
 import matplotlib.pyplot as plt
 from aid_funcs.plot import show_image_with_overlay
