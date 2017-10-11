@@ -4,8 +4,7 @@ import os
 import matplotlib.pyplot as plt
 from aid_funcs.plot import show_image_with_overlay
 from aid_funcs.misc import zip_load
-
-training_path = r'C:\Users\admin\OneDrive - Imedis Medical\data_repo\TRAINING'
+from training_path import training_path
 model_path = r'ptx_model_13_38_30_09_2017.hdf5'
 
 im_size = 512
