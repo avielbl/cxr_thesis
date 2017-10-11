@@ -2,14 +2,16 @@ import numpy as np
 import os
 import cv2
 import pickle
+from collections import namedtuple
 from aid_funcs import image
 from scipy import ndimage
 from skimage import measure, morphology
 
-import CXRLoadNPrep as clp
-import params
+from aid_funcs import CXRLoadNPrep as clp
+from . import params
 im_size = params.im_size
 
+lung_masks = namedtuple('lung_masks', ['r_lung_mask', 'l_lung_mask'])
 
 def load_images(path):
     """
@@ -107,6 +109,25 @@ def pre_process_images(images_arr):
     return images_arr
 
 
+def seperate_lungs(seg_map):
+    sz = seg_map.shape
+    label_im, nb_labels = ndimage.label(seg_map)
+    assert nb_labels < 3, 'More than 2 objects detected in the segmentation map'
+    r_lung_mask = np.zeros_like(label_im)
+    l_lung_mask = np.zeros_like(label_im)
+    labels = np.unique(label_im)
+    labels = labels[1:]
+    for lung in labels:
+        curr_lung = np.zeros_like(label_im)
+        curr_lung[label_im == lung] = 1
+        m = measure.moments(np.uint8(curr_lung))
+        cc = m[1, 0] / m[0, 0]
+        if cc < sz[1] / 2:
+            r_lung_mask = curr_lung
+        else:
+            l_lung_mask = curr_lung
+    return lung_masks(r_lung_mask, l_lung_mask)
+
 def post_process_seg_result(scores):
     """
     Function for performing the post-process of a raw scores map
@@ -145,4 +166,4 @@ def post_process_seg_result(scores):
             r_lung_mask[curr_lung] = 1
         else:
             l_lung_mask[curr_lung] = 1
-    return {'r_lung_mask': r_lung_mask, 'l_lung_mask': l_lung_mask}
+    return lung_masks(r_lung_mask, l_lung_mask)

@@ -1,6 +1,6 @@
 from utilfuncs import *
 import matplotlib.pyplot as plt
-from aid_funcs import image
+from aid_funcs import plot
 import os
 # import keras.models
 from aid_funcs.keraswrapper import load_model
@@ -29,13 +29,13 @@ def predict_all_masks(result_iter):
     for i in range(n):
         start_time = time.time()
         curr_lung = predict(images_arr[i], model)
-        lung_masks_arr[i] = curr_lung['r_lung_mask'] + curr_lung['l_lung_mask']
+        lung_masks_arr[i] = curr_lung.r_lung_mask + curr_lung.l_lung_mask
         print('completed prediction of %i/%i in %.3f seconds' % (i + 1, n, time.time() - start_time))
         im_name = 'pred_seg%02u' % (i + 1)
         img = np.squeeze(images_arr[i])
         curr_mask = np.squeeze(lung_masks_arr[i])
         gt_mask = np.squeeze(gt_seg_maps[i])
-        drawnow(image.show_image_with_overlay, img=img, overlay=256 * curr_mask, overlay2=256 * gt_mask,
+        drawnow(plot.show_image_with_overlay, img=img, overlay=256 * curr_mask, overlay2=256 * gt_mask,
                 title_str=im_name + ': blue=gt, red=pred')
         path = os.path.join(results_folder_path, '%s.png' % im_name)
         print('saving figure', i + 1)
