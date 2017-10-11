@@ -31,8 +31,9 @@ def is_ptx_case(ptx_mask):
         return True
 
 
-def train_val_partition():
-    data_lst = zip_load(os.path.join(training_path, 'train_set.pkl'))
+def train_val_partition(data_lst=None):
+    if data_lst is None:
+        data_lst = zip_load(os.path.join(training_path, 'train_set.pkl'))
     nb_train_total = len(data_lst)
     val_idx = np.random.choice(range(nb_train_total), int(0.3 * nb_train_total))
 
