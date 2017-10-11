@@ -17,7 +17,7 @@ def predict(img, model=None, verbose=0):
     :return: dict of 2 binary masks with fields: 'r_lung_mask', 'l_lung_mask'
     """
     if model is None:
-        from radfuncs.keraswrapper import load_model
+        from aid_funcs.keraswrapper import load_model
         model = load_model(seg_model_path, custom_objects='dice_coef_loss')
     if isinstance(img, str):
         img = load_image(img)

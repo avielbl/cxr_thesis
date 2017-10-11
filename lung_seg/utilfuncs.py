@@ -2,7 +2,7 @@ import numpy as np
 import os
 import cv2
 import pickle
-from radfuncs import image
+from aid_funcs import image
 from scipy import ndimage
 from skimage import measure, morphology
 

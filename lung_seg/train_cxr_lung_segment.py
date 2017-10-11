@@ -1,7 +1,7 @@
 from utilfuncs import *
 from keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
-from radfuncs.keraswrapper import get_unet, PlotLearningCurves, print_model_to_file
-from radfuncs.keraswrapper import dice_coef, dice_coef_loss
+from aid_funcs.keraswrapper import get_unet, PlotLearningCurves, print_model_to_file
+from aid_funcs.keraswrapper import dice_coef, dice_coef_loss
 from keras.optimizers import Adam
 import time
 from sklearn.metrics import roc_curve, auc

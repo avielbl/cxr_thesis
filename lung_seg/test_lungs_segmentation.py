@@ -1,9 +1,9 @@
 from utilfuncs import *
 import matplotlib.pyplot as plt
-from radfuncs import image
+from aid_funcs import image
 import os
 # import keras.models
-from radfuncs.keraswrapper import load_model
+from aid_funcs.keraswrapper import load_model
 import time
 import pickle
 from drawnow import drawnow, figure

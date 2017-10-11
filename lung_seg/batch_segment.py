@@ -6,24 +6,24 @@ import os
 import time
 import pickle
 from drawnow import drawnow
-import radfuncs.image as image
-from radfuncs.plot import show_image_with_overlay
-from radfuncs.keraswrapper import load_model
+import aid_funcs.image as image
+from aid_funcs.plot import show_image_with_overlay
+from aid_funcs.keraswrapper import load_model
 import keras.models
 from scipy import ndimage
 from skimage import measure, morphology
 from scipy.misc import imsave
 from scipy.io import savemat
-from newLungsSegmentation.predict import predict as lung_seg_predict
-from newLungsSegmentation.utilfuncs import load_image
-from lateral_frontal_detection import predict as lat_predict
-from lateral_frontal_detection import model_path as lat_model_path
+from lung_seg.predict import predict as lung_seg_predict
+from lung_seg.utilfuncs import load_image
+# from lateral_frontal_detection import predict as lat_predict
+# from lateral_frontal_detection import model_path as lat_model_path
 
 curr_folder = os.path.dirname(os.path.abspath(__file__))
 model_path = os.path.join(curr_folder, 'lung_seg_model_10_17_16_02_2017.hdf5')
 
 model = load_model(model_path, custom_objects='dice_coef_loss')
-lat_model = load_model(lat_model_path)
+# lat_model = load_model(lat_model_path)
 
 def batch_segment(in_path, out_path, save_mat_flag=True):
     images_dir = os.listdir(in_path)
@@ -44,8 +44,8 @@ def batch_segment(in_path, out_path, save_mat_flag=True):
                 if not isinstance(img, (np.ndarray, np.generic) ):
                     print('skipping {} as it isn\'t a DICOM file'.format(im_name))
                     continue
-                if 'lat' in lat_predict(os.path.join(root, file), lat_model):
-                    continue
+                # if 'lat' in lat_predict(os.path.join(root, file), lat_model):
+                #     continue
                 # Actual prediction
                 res = lung_seg_predict(os.path.join(root, file), model)
                 # if np.sum(res['r_lung_mask']) == 0 or np.sum(res['l_lung_mask']) == 0:

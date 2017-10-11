@@ -203,7 +203,7 @@ class PlotLearningCurves(keras.callbacks.Callback):
     Implemented as a callback to be transferred to model.fit method.
 
     Usage example:
-    from radfuncs.keraswrapper import PlotLearningCurves
+    from aid_funcs.keraswrapper import PlotLearningCurves
     plot_curves_callback = PlotLearningCurves()
     model.fit(X, Y, nb_epoch=10, batch_size=10, callbacks=[plot_curves_callback])
 
