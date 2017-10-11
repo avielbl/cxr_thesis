@@ -1,14 +1,10 @@
 import numpy as np
-import numpy.random
+np.random.seed(1)
+from collections import namedtuple
+from aid_funcs.misc import zip_save
 
-from misc import zip_save
-
-numpy.random.seed(1)
-
-import os
 from skimage import measure
 from scipy.misc import imread
-
 
 from aid_funcs import CXRLoadNPrep as clp
 from aid_funcs import image
