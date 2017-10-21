@@ -1,9 +1,12 @@
 import numpy as np
+from skimage import measure
+
 np.random.seed(1)
 import os
 import matplotlib.pyplot as plt
 from aid_funcs.plot import show_image_with_overlay
 from aid_funcs.misc import zip_load
+from aid_funcs import image
 from training_path import training_path
 model_path = r'ptx_model_13_38_30_09_2017.hdf5'
 
@@ -30,9 +33,46 @@ def is_ptx_case(ptx_mask):
         return True
 
 
+def load_data_lst():
+    data_lst = zip_load(os.path.join(training_path, 'train_set.pkl'))
+    return data_lst
+
+
+def pre_process_case(case):
+    # Cropping image and mask
+    img = case['img']
+    lung_mask = case['lung_mask']
+    ptx_mask = case['ptx_mask']
+
+    lung_map_dilated = image.safe_binary_morphology(lung_mask, sesize=15, mode='dilate')
+    lung_bbox = measure.regionprops(lung_map_dilated.astype(np.uint8))
+    lung_bbox = lung_bbox[0].bbox
+    img = img[lung_bbox[0]:lung_bbox[2], lung_bbox[1]:lung_bbox[3]]
+    lung_mask = lung_mask[lung_bbox[0]:lung_bbox[2], lung_bbox[1]:lung_bbox[3]]
+    if ptx_mask is not None:
+        ptx_mask = ptx_mask[lung_bbox[0]:lung_bbox[2], lung_bbox[1]:lung_bbox[3]]
+
+    # Resizing cropped image for getting same scale for all images
+    img = image.resize_w_aspect(img.astype(np.float32), im_size, padvalue=np.nan)
+    lung_mask = image.resize_w_aspect(lung_mask, im_size)
+    if ptx_mask is not None:
+        ptx_mask = image.resize_w_aspect(ptx_mask, im_size)
+
+    # Normalizing each image based on mean and std of lung pixels
+    nan_img = img.copy()
+    nan_img = nan_img.astype(np.float32)
+    # nan_img[lung_mask == 0] = np.nan
+    mean_val = np.nanmean(nan_img)
+    std_val = np.nanstd(nan_img)
+    out_img = img.copy().astype(np.float32)
+    out_img -= mean_val
+    out_img /= std_val
+    out_img[np.isnan(out_img)] = np.nanmax(out_img)
+    return {'name': case['name'], 'img': img, 'lung_mask': lung_mask, 'ptx_mask': ptx_mask}
+
 def train_val_partition(data_lst=None):
     if data_lst is None:
-        data_lst = zip_load(os.path.join(training_path, 'train_set.pkl'))
+        data_lst = load_data_lst()
     nb_train_total = len(data_lst)
     val_idx = np.random.choice(range(nb_train_total), int(0.3 * nb_train_total))
 
