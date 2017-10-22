@@ -1,11 +1,8 @@
 import numpy as np
 np.random.seed(1)
 from aid_funcs.misc import zip_save
-
 from scipy.misc import imread
-
 from aid_funcs import CXRLoadNPrep as clp
-
 from utils import *
 
 # Creating list of images
@@ -40,8 +37,8 @@ for im_count, curr_img_path in enumerate(imgs_path_lst):
         else:
             ptx_mask = None
 
-
-        train_set_lst.append({'name': img_name, 'img': img, 'lung_mask': lung_mask, 'ptx_mask': ptx_mask})
+        case = Case(img_name, img, lung_mask, ptx_mask)
+        train_set_lst.append(case)
     print("Loaded image number %i" % im_count)
 
 

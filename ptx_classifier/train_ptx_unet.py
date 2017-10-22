@@ -1,4 +1,5 @@
 import numpy as np
+
 np.random.seed(1)
 from collections import namedtuple
 from keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
@@ -19,7 +20,6 @@ Data = namedtuple('Case', ['img', 'lung_mask', 'ptx_mask'])
 
 
 def generate_data_lst():
-
     lung_seg_path = os.path.join(training_path, 'lung_seg_gt')
     ptx_masks_path = os.path.join(training_path, 'ptx_masks_gt')
     imgs_path_lst = create_imgs_path_lst()
@@ -50,6 +50,7 @@ def generate_data_lst():
         print("Loaded image number %i" % im_count)
     return train_data_lst
 
+
 def create_imgs_path_lst():
     # Creating list of images' paths
     pos_path = os.path.join(training_path, 'pos_cases')
@@ -57,6 +58,7 @@ def create_imgs_path_lst():
     pos_files = [os.path.join(pos_path, file) for file in os.listdir(pos_path)]
     neg_files = [os.path.join(neg_path, file) for file in os.listdir(neg_path)]
     return pos_files + neg_files
+
 
 def get_lungs_bb(img, lungs_mask, ptx_mask=None):
     def get_lung_bb(img, lung_mask, ptx_mask=None):
@@ -132,7 +134,9 @@ def prep_data(train_data_lst, val_data_lst, side_str):
     val_imgs_arr, val_masks_arr = prep_set(val_data_lst)
     db = (train_imgs_arr, train_masks_arr, val_imgs_arr, val_masks_arr)
     return db
-#TODO: update commented 2 functions bellow to fit partition to 2 lungs
+
+
+# TODO: update commented 2 functions bellow to fit partition to 2 lungs
 # def get_lung_masks(data_lst):
 #     nb_images = len(data_lst)
 #     lung_masks_arr = np.zeros((nb_images, 1, im_size, im_size), dtype=np.uint8)
@@ -168,6 +172,8 @@ def prep_data(train_data_lst, val_data_lst, side_str):
 #     plt.title('ROC curve (area = %0.2f, opt thresh = %0.2f)' % (100 * roc_auc, opt_thresh))
 #     plt.savefig('roc analysis unet.png')
 
+
+
 def train_model(db):
     lr = 0.0001
     optim_fun = Adam(lr=lr)
@@ -186,14 +192,16 @@ def train_model(db):
               verbose=1, shuffle=True,
               callbacks=callbacks)
 
+
 ##########################################################
 ###########            MAIN SCRIPT        ################
 ##########################################################
+db = [
+    load_from_h5(os.path.join(training_path, 'db_train_imgs_arr.h5')),
+    load_from_h5(os.path.join(training_path, 'db_train_masks_arr.h5')).astype(np.uint8),
+    load_from_h5(os.path.join(training_path, 'db_val_imgs_arr.h5')),
+    load_from_h5(os.path.join(training_path, 'db_val_masks_arr.h5')).astype(np.uint8)
+]
 
-
-train_data_lst, val_data_lst = train_val_partition(generate_data_lst())
-db_left = prep_data(train_data_lst, val_data_lst, 'left')
-save_to_h5(db_left, os.path.join(training_path, 'db_left.h5'))
-# db_left = load_from_h5(os.path.join(training_path, 'db_left.h5'))
-model_left = train_model(db_left)
+model_left = train_model(db)
 # analyze_performance(db)
