@@ -120,21 +120,19 @@ def get_unet(im_size, filters=64, filter_size=3, dropout_val=0.5, lrelu_alpha=0.
     conv1, pool1 = contraction_block(inputs, 1)
     conv2, pool2 = contraction_block(pool1, 2)
     conv3, pool3 = contraction_block(pool2, 4)
-    conv4, pool4 = contraction_block(pool3, 8)
-    conv5, pool5 = contraction_block(pool4, 16)
+    conv4, _ = contraction_block(pool3, 8)
 
-    conv5 = Dropout(dropout_val)(conv5)
+    conv4 = Dropout(dropout_val)(conv4)
 
-    conv6 = expansion_block(conv5, conv4, 8)
-    conv7 = expansion_block(conv6, conv3, 4)
-    conv8 = expansion_block(conv7, conv2, 2)
-    conv9 = expansion_block(conv8, conv1, 1)
+    conv5 = expansion_block(conv4, conv3, 8)
+    conv6 = expansion_block(conv5, conv2, 4)
+    conv7 = expansion_block(conv6, conv1, 2)
 
-    conv9 = Dropout(dropout_val)(conv9)
+    conv8 = Dropout(dropout_val)(conv7)
 
-    conv10 = Conv2D(1, (1, 1), activation='sigmoid', kernel_initializer='he_normal')(conv9)
+    conv9 = Conv2D(1, (1, 1), activation='sigmoid', kernel_initializer='he_normal')(conv8)
 
-    model = Model(inputs=inputs, outputs=conv10)
+    model = Model(inputs=inputs, outputs=conv9)
     if optim_fun == None:
         optim_fun = SGD(**kwargs)
     model.compile(optimizer=optim_fun, loss=loss_fun, metrics=[metrics])

@@ -176,9 +176,9 @@ def prep_data(train_data_lst, val_data_lst, side_str):
 
 def train_model(db):
     lr = 0.0001
-    optim_fun = Adam(lr=lr)
+    optim_fun = Adam(lr=0.00001, decay=0.00002)
 
-    model = get_unet(im_size, filters=32, optim_fun=optim_fun)
+    model = get_unet(im_size, filters=16, optim_fun=optim_fun)
     model.summary()
     model_file_name = 'ptx_model_unet' + '.hdf5'
 
