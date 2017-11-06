@@ -39,14 +39,17 @@ def show_image_with_overlay(img, overlay, overlay2=np.array([]), title_str='', a
     """
 
     sz = np.shape(img)
-    img = im_rescale(img, 0, 256)
-    overlay = im_rescale(overlay, 0, 256)
+    img = im_rescale(img, 0, 255)
+    if np.sum(overlay) > 0:
+        overlay = im_rescale(overlay, 0, 255)
     out_img = np.ndarray((sz[0], sz[1], 3))
     out_img[:, :, 0] = (1 - alpha) * img + alpha * overlay
     out_img[:, :, 1] = (1 - alpha) * img
     if overlay2.size == 0:
         out_img[:, :, 2] = (1 - alpha) * img
     else:
+        if np.sum(overlay2) > 0:
+            overlay2 = im_rescale(overlay2, 0, 255)
         out_img[:, :, 2] = (1 - alpha) * img + (alpha * overlay2)
     out_img = np.uint8(out_img)
     out = plt.imshow(out_img)
