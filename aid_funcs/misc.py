@@ -7,6 +7,8 @@ import csv
 import os
 import dicom
 import scipy.io as spio
+import matplotlib.pyplot as plt
+from sklearn.metrics import roc_curve, auc
 
 
 def zip_save(object, filename, protocol = -1):
@@ -169,3 +171,27 @@ def load_from_h5(file_name):
         data = hf['name-of-dataset'][:]
 
     return data
+
+def roc_plotter(gt, scores, title):
+    fpr, tpr, thresh = roc_curve(gt, scores)
+    roc_auc = auc(fpr, tpr)
+    dist_to_opt = np.sqrt(fpr ** 2 + (1 - tpr) ** 2)
+    opt_ind = np.argmin(dist_to_opt)
+    opt_thresh = thresh[opt_ind]
+
+    # plotting the roc
+    fig = plt.figure(1)
+    plt.plot(fpr, tpr, label='ROC')
+    plt.plot(fpr, thresh, label='Threshold')
+    plt.plot(fpr[opt_ind], tpr[opt_ind], 'ro', label='Optimal thresh')
+    plt.minorticks_on()
+    plt.grid(b=True, which='both')
+    plt.legend(loc='upper right')
+    plt.title('ROC curve {} (area = {:.1f}, opt thresh = {:.2f})'.format(title, 100 * roc_auc, opt_thresh))
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.show()
+    plt.savefig('roc analysis ' + title + '.png')
+    return fig
