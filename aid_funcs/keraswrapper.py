@@ -16,7 +16,7 @@ from collections import OrderedDict
 from matplotlib.legend_handler import HandlerLine2D
 import time
 
-K.set_image_dim_ordering('th')  # Theano dimension ordering in this code
+# K.set_image_dim_ordering('th')  # Theano dimension ordering in this code
 
 
 def load_model(model_path, custom_objects = None):
