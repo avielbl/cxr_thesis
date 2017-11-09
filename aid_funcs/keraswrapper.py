@@ -12,11 +12,11 @@ from keras import backend as K
 import keras.callbacks
 from drawnow import drawnow
 import matplotlib.pyplot as plt
-from collections import OrderedDict
+from collections import OrderedDict, Counter
 from matplotlib.legend_handler import HandlerLine2D
 import time
-
-# K.set_image_dim_ordering('th')  # Theano dimension ordering in this code
+import tensorflow as tf
+#K.set_image_dim_ordering('th')  # Theano dimension ordering in this code
 
 
 def load_model(model_path, custom_objects = None):
@@ -55,7 +55,19 @@ def dice_coef_loss(y_true, y_pred):
     return 1 - dice_coef(y_true, y_pred)
 
 
-def get_unet(im_size, filters=64, filter_size=3, dropout_val=0.5, lrelu_alpha=0.25, loss_fun=dice_coef_loss, metrics=dice_coef, optim_fun=None, **kwargs):
+def weighted_pixelwise_crossentropy(class_weights):
+    def loss(y_true, y_pred):
+        # y_true = K.flatten(y_true)
+        # y_pred = K.flatten(y_pred)
+        epsilon = tf.convert_to_tensor(1e-8, y_pred.dtype.base_dtype)
+        y_pred = tf.clip_by_value(y_pred, epsilon, 1. - epsilon)
+        return - tf.reduce_sum(tf.multiply(y_true * tf.log(y_pred), class_weights))
+    return loss
+
+
+def get_unet(im_size, filters=64, filter_size=3, dropout_val=0.5,
+             lrelu_alpha=0.25, nb_classes=1, loss_fun=dice_coef_loss,
+             metrics=dice_coef, optim_fun=None, **kwargs):
     '''
     Generate a compiled customized U-Net model for segmentation tasks.
     Assumes square grayscale images.
@@ -130,7 +142,7 @@ def get_unet(im_size, filters=64, filter_size=3, dropout_val=0.5, lrelu_alpha=0.
 
     conv8 = Dropout(dropout_val)(conv7)
 
-    conv9 = Conv2D(1, (1, 1), activation='sigmoid', kernel_initializer='he_normal')(conv8)
+    conv9 = Conv2D(nb_classes, (1, 1), activation='sigmoid', kernel_initializer='he_normal')(conv8)
 
     model = Model(inputs=inputs, outputs=conv9)
     if optim_fun == None:
@@ -265,3 +277,22 @@ class PlotLearningCurves(keras.callbacks.Callback):
         plt.pause(1e-6)
         fig.savefig(self.file_name)
 
+def get_class_weights(y, smooth_factor=0.1):
+    """
+    Returns the weights for each class based on the frequencies of the samples
+    :param smooth_factor: factor that smooths extremely uneven weights
+    :param y: list of true labels (the labels must be hashable)
+    :return: dictionary with the weight for each class
+    """
+    flat_y = list(y.flatten())
+    counter = Counter(flat_y)
+
+    if smooth_factor > 0:
+        p = max(counter.values()) * smooth_factor
+        for k in counter.keys():
+            counter[k] += p
+
+    majority = max(counter.values())
+
+    # return {cls: float(majority / count) for cls, count in counter.items()}
+    return [float(majority / counter[0]),  float(majority / counter[1])]
