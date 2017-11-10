@@ -152,25 +152,26 @@ def get_lung_masks(data_lst):
 def train_model(db, model_name, class_weights=(1, 1)):
     print('Building model...')
     optim_fun = Adam(lr=0.00001, decay=0.00002)
-    # loss_fun = weighted_pixelwise_crossentropy(class_weights)
-    loss_fun = dice_coef_loss
-    metrics = dice_coef
+    loss_fun = weighted_pixelwise_crossentropy(class_weights)
+    # loss_fun = dice_coef_loss
+    # metrics = dice_coef
+    metrics = 'acc'
     model = get_unet(im_size, filters=16, optim_fun=optim_fun,
                      loss_fun=loss_fun,
-                     metrics=dice_coef,
-                     nb_classes=1)
+                     metrics=metrics,
+                     nb_classes=2)
     model.summary()
     model_file_name = 'ptx_model_' + model_name + '.hdf5'
 
     model_checkpoint = ModelCheckpoint(model_file_name, monitor='val_loss', mode='min', save_best_only=True, verbose=1)
     early_stopping = EarlyStopping(monitor='val_loss', mode='min', patience=5, verbose=1)
     reduce_lr_on_plateu = ReduceLROnPlateau(monitor='val_loss', mode='min', patience=3, factor=0.3, verbose=1)
-    # plot_curves_callback = PlotLearningCurves()
-    plot_curves_callback = PlotLearningCurves(metric_name='dice_coef')
+    plot_curves_callback = PlotLearningCurves()
+    # plot_curves_callback = PlotLearningCurves(metric_name='dice_coef')
     callbacks = [model_checkpoint, early_stopping, reduce_lr_on_plateu, plot_curves_callback]
-    # print('Transform masks to one-hot...')
-    # db[1] = categorize(db[1])
-    # db[3] = categorize(db[3])
+    print('Transform masks to one-hot...')
+    db[1] = categorize(db[1])
+    db[3] = categorize(db[3])
     print('Start fitting...')
     model.fit(db[0], db[1], batch_size=5, epochs=100,
               validation_data=(db[2], db[3]),
@@ -181,14 +182,16 @@ def train_model(db, model_name, class_weights=(1, 1)):
     return model
 
 def categorize(arr):
-    out = np.zeros((arr.shape[0], 2, arr.shape[2], arr.shape[3]), dtype=np.uint8)
-    out[:, 0, :, :] = (1 - arr).squeeze()
-    out[:, 1, :, :] = arr.squeeze()
+    out = np.zeros((arr.shape[0], arr.shape[1], arr.shape[2], 2), dtype=np.uint8)
+    out[:, :, :, 0] = (1 - arr).squeeze()
+    out[:, :, :, 1] = arr.squeeze()
     return out
 
 ##########################################################
 ###########            MAIN SCRIPT        ################
 ##########################################################
+from keras import backend as K
+print(K.image_data_format())
 print('Loading data...')
 db = [
     load_from_h5(os.path.join(training_path, 'db_train_imgs_arr.h5')),
@@ -202,9 +205,18 @@ db = [
 # nb_pos = np.sum(db[1])
 # nb_neg = nb_pixels - nb_pos
 
-# class_weights = get_class_weights(db[1])
-class_weights = None
-model_name = 'U-Net_DICE'
+db[0] = np.rollaxis(db[0], 1, 4)
+db[1] = np.rollaxis(db[1], 1, 4)
+db[2] = np.rollaxis(db[2], 1, 4)
+db[3] = np.rollaxis(db[3], 1, 4)
+
+class_weights = get_class_weights(db[1])
+# class_weights = None
+
+# model_name = 'U-Net_DICE'
+model_name = 'U-Net_WCE'
 # model = train_model(db, model_name, class_weights)
 from batch_predict_unet import analyze_performance
-analyze_performance(model=None, val_data=(db[2], db[3]), model_name=model_name)
+analyze_performance(model=None, val_data=(db[2], db[3]),
+                    model_name=model_name,
+                    custom_objects={'loss': weighted_pixelwise_crossentropy(class_weights)})

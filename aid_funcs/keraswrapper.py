@@ -59,9 +59,13 @@ def weighted_pixelwise_crossentropy(class_weights):
     def loss(y_true, y_pred):
         # y_true = K.flatten(y_true)
         # y_pred = K.flatten(y_pred)
+        weights = tf.convert_to_tensor(class_weights)
+       # weights = tf.expand_dims(weights, 1)
+      #  weights = tf.expand_dims(weights, 0)
+      #  weights = tf.expand_dims(weights, 0)
         epsilon = tf.convert_to_tensor(1e-8, y_pred.dtype.base_dtype)
         y_pred = tf.clip_by_value(y_pred, epsilon, 1. - epsilon)
-        return - tf.reduce_sum(tf.multiply(y_true * tf.log(y_pred), class_weights))
+        return - tf.reduce_sum(tf.multiply(y_true * tf.log(y_pred), weights))
     return loss
 
 
@@ -115,7 +119,7 @@ def get_unet(im_size, filters=64, filter_size=3, dropout_val=0.5,
         :param filters_mult: scalar multiplication factor for the number of filters
         :return: last conv layer in the block
         '''
-        up_layer = concatenate([UpSampling2D(size=(2, 2))(low_res_layer), high_res_layer], axis=1)
+        up_layer = concatenate([UpSampling2D(size=(2, 2))(low_res_layer), high_res_layer], axis=3)
         conv_layer = Conv2D(filters * filters_mult,
                             (filter_size, filter_size),
                             kernel_initializer='he_normal',
@@ -128,7 +132,7 @@ def get_unet(im_size, filters=64, filter_size=3, dropout_val=0.5,
         conv_layer = LeakyReLU(lrelu_alpha)(conv_layer)
         return conv_layer
 
-    inputs = Input((1, im_size, im_size))
+    inputs = Input((im_size, im_size, 1))
     conv1, pool1 = contraction_block(inputs, 1)
     conv2, pool2 = contraction_block(pool1, 2)
     conv3, pool3 = contraction_block(pool2, 4)

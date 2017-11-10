@@ -5,10 +5,10 @@ from utils import *
 
 
 
-def analyze_performance(model=None, val_data = None, model_name=''):
+def analyze_performance(model=None, val_data = None, model_name='', custom_objects=None):
     if model is None:
-        # model = load_model('ptx_model_unet.hdf5')
-        model = load_model('ptx_model_unet.hdf5', custom_objects='dice_coef_loss')
+        model = load_model('ptx_model_' + model_name + '.hdf5', custom_objects=custom_objects)
+        # model = load_model('ptx_model_unet.hdf5', custom_objects='dice_coef_loss')
     if val_data is None:
         _, val_data_lst = process_and_augment_data()
         val_imgs_arr, val_masks_arr = prep_set(val_data_lst)
@@ -19,7 +19,7 @@ def analyze_performance(model=None, val_data = None, model_name=''):
     lung_masks_arr = load_from_h5(os.path.join(training_path, 'db_lung_masks_arr.h5'))
 
     scores = model.predict(val_imgs_arr, batch_size=5, verbose=1)
-
+    scores = scores[:, :, :, 1] #Taking only scores for ptx
     # calculating ROC per pixel
     lung_flatten = np.array(lung_masks_arr).flatten()
     lung_idx = np.where(lung_flatten > 0)
