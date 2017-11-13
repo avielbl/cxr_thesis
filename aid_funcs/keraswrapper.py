@@ -146,7 +146,7 @@ def get_unet(im_size, filters=64, filter_size=3, dropout_val=0.5,
 
     conv8 = Dropout(dropout_val)(conv7)
 
-    conv9 = Conv2D(nb_classes, (1, 1), activation='sigmoid', kernel_initializer='he_normal')(conv8)
+    conv9 = Conv2D(nb_classes, (1, 1), activation='softmax', kernel_initializer='he_normal')(conv8)
 
     model = Model(inputs=inputs, outputs=conv9)
     if optim_fun == None:

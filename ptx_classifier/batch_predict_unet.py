@@ -30,9 +30,9 @@ def analyze_performance(model=None, val_data = None, model_name='', custom_objec
     roc_plotter(gt_vec, scores_vec, model_name)
 
     pred_maps = np.zeros_like(scores, dtype=np.uint8)
-    pred_maps[scores > 0.11] = 255
+    pred_maps[scores > 0.5] = 255
 
-    nb_val = val_imgs_arr.shape[0] + 1
+    nb_val = val_imgs_arr.shape[0]
     plt.figure()
     if os.path.isdir('results') is False:
         os.mkdir('results')

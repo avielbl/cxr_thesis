@@ -190,8 +190,6 @@ def categorize(arr):
 ##########################################################
 ###########            MAIN SCRIPT        ################
 ##########################################################
-from keras import backend as K
-print(K.image_data_format())
 print('Loading data...')
 db = [
     load_from_h5(os.path.join(training_path, 'db_train_imgs_arr.h5')),
@@ -215,7 +213,7 @@ class_weights = get_class_weights(db[1])
 
 # model_name = 'U-Net_DICE'
 model_name = 'U-Net_WCE'
-# model = train_model(db, model_name, class_weights)
+model = train_model(db, model_name, class_weights)
 from batch_predict_unet import analyze_performance
 analyze_performance(model=None, val_data=(db[2], db[3]),
                     model_name=model_name,
