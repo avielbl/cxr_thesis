@@ -38,6 +38,9 @@ def dice_coef(y_true, y_pred):
     :return: dice value range from 0 to 1
     '''
     smooth = 1.
+    if y_pred.shape.dims[3] > 1:
+        y_pred = y_pred[:,:,:,1]
+        y_true = y_true[:,:,:,1]
     y_true = K.flatten(y_true)
     y_pred = K.flatten(y_pred)
     intersection = K.sum(y_true * y_pred)
@@ -57,12 +60,7 @@ def dice_coef_loss(y_true, y_pred):
 
 def weighted_pixelwise_crossentropy(class_weights):
     def loss(y_true, y_pred):
-        # y_true = K.flatten(y_true)
-        # y_pred = K.flatten(y_pred)
         weights = tf.convert_to_tensor(class_weights)
-       # weights = tf.expand_dims(weights, 1)
-      #  weights = tf.expand_dims(weights, 0)
-      #  weights = tf.expand_dims(weights, 0)
         epsilon = tf.convert_to_tensor(1e-8, y_pred.dtype.base_dtype)
         y_pred = tf.clip_by_value(y_pred, epsilon, 1. - epsilon)
         return - tf.reduce_sum(tf.multiply(y_true * tf.log(y_pred), weights))
