@@ -154,8 +154,8 @@ def train_model(db, model_name, class_weights=(1, 1)):
     optim_fun = Adam(lr=0.00001, decay=0.00002)
     loss_fun = weighted_pixelwise_crossentropy(class_weights)
     # loss_fun = dice_coef_loss
-    # metrics = dice_coef
-    metrics = 'acc'
+    metrics = dice_coef
+    # metrics = 'acc'
     model = get_unet(im_size, filters=16, optim_fun=optim_fun,
                      loss_fun=loss_fun,
                      metrics=metrics,
@@ -164,10 +164,10 @@ def train_model(db, model_name, class_weights=(1, 1)):
     model_file_name = 'ptx_model_' + model_name + '.hdf5'
 
     model_checkpoint = ModelCheckpoint(model_file_name, monitor='val_loss', mode='min', save_best_only=True, verbose=1)
-    early_stopping = EarlyStopping(monitor='val_loss', mode='min', patience=5, verbose=1)
-    reduce_lr_on_plateu = ReduceLROnPlateau(monitor='val_loss', mode='min', patience=3, factor=0.3, verbose=1)
-    plot_curves_callback = PlotLearningCurves()
-    # plot_curves_callback = PlotLearningCurves(metric_name='dice_coef')
+    early_stopping = EarlyStopping(monitor='val_loss', mode='min', patience=10, verbose=1)
+    reduce_lr_on_plateu = ReduceLROnPlateau(monitor='val_loss', mode='min', patience=5, factor=0.3, verbose=1)
+   # plot_curves_callback = PlotLearningCurves()
+    plot_curves_callback = PlotLearningCurves(metric_name='dice_coef')
     callbacks = [model_checkpoint, early_stopping, reduce_lr_on_plateu, plot_curves_callback]
     print('Transform masks to one-hot...')
     db[1] = categorize(db[1])
@@ -213,8 +213,8 @@ class_weights = get_class_weights(db[1])
 
 # model_name = 'U-Net_DICE'
 model_name = 'U-Net_WCE'
-model = train_model(db, model_name, class_weights)
+# model = train_model(db, model_name, class_weights)
 from batch_predict_unet import analyze_performance
 analyze_performance(model=None, val_data=(db[2], db[3]),
                     model_name=model_name,
-                    custom_objects={'loss': weighted_pixelwise_crossentropy(class_weights)})
+                    custom_objects={'loss': weighted_pixelwise_crossentropy(class_weights), 'dice_coef':dice_coef})
