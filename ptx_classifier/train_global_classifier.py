@@ -125,7 +125,8 @@ def train_model():
         load_from_h5(os.path.join(training_path, 'val_scores_maps_arr.h5')).astype(np.uint8),
         load_from_h5(os.path.join(training_path, 'val_global_label_arr.h5')).astype(np.uint8)
     ]
-
+    db[0] = np.repeat(db[0], 3, 3)
+    db[2] = np.repeat(db[0], 3, 3)
     # for i in range(db[0].shape[0]):
     #     label = str(db[1][i])
     #     img = db[0][i].squeeze()
