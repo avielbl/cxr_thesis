@@ -19,7 +19,7 @@ from utils import *
 from aid_funcs.keraswrapper import load_model, get_class_weights, weighted_pixelwise_crossentropy, dice_coef, \
     PlotLearningCurves
 
-im_sz = 32
+im_sz = 48
 def prep_set_for_global_classifier():
     print('Loading data...')
     db = [
@@ -72,7 +72,7 @@ def prep_set_for_global_classifier():
 
 def build_model_vgg16_based(nb_epochs):
     base_model = VGG16(weights='imagenet', include_top=False,
-                       input_shape=(im_sz, im_sz, 1))
+                       input_shape=(im_sz, im_sz, 3))
     x = base_model.get_layer('block4_pool').output
     x = Flatten()(x)
     x = Dense(64, activation='relu')(x)
@@ -96,7 +96,7 @@ def build_model(nb_epochs):
     model.add(MaxPooling2D(pool_size=(2, 2)))
 
     model.add(Conv2D(32, (3, 3), padding='same', kernel_initializer='he_normal'))
-    model.add(LeakyReLU(0.01))
+    model.add(LeakyReLU(0.0))
     model.add(MaxPooling2D(pool_size=(2, 2)))
 
     model.add(Flatten())
@@ -106,7 +106,7 @@ def build_model(nb_epochs):
     # model.add(Dropout(0.5))
 
     model.add(Dense(1, activation='softmax'))
-    lr = 0.00001
+    lr = 0.001
     decay_fac = 1
     optim_fun = Adam(lr=lr, decay=decay_fac * lr / nb_epochs)
 
@@ -126,7 +126,7 @@ def train_model():
         load_from_h5(os.path.join(training_path, 'val_global_label_arr.h5')).astype(np.uint8)
     ]
     db[0] = np.repeat(db[0], 3, 3)
-    db[2] = np.repeat(db[0], 3, 3)
+    db[2] = np.repeat(db[2], 3, 3)
     # for i in range(db[0].shape[0]):
     #     label = str(db[1][i])
     #     img = db[0][i].squeeze()
