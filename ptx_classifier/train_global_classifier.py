@@ -15,9 +15,10 @@ from keras.applications.vgg16 import VGG16
 
 from aid_funcs.image import imresize, im_rescale
 from aid_funcs.misc import load_from_h5, save_to_h5
+from utilfuncs import seperate_lungs
 from utils import *
 from aid_funcs.keraswrapper import load_model, get_class_weights, weighted_pixelwise_crossentropy, dice_coef, \
-    PlotLearningCurves, plot_conv_weights
+    PlotLearningCurves
 from prep_data_for_unet import get_lung_masks, prep_set
 im_sz = 128
 
@@ -25,10 +26,9 @@ im_sz = 128
 def prep_set_for_global_classifier():
     print('Loading data...')
     train_data_lst, val_data_lst = process_and_augment_data()
-    val_lung_masks_arr = get_lung_masks(val_data_lst)
-    train_lung_masks_arr = get_lung_masks(train_data_lst)
     train_imgs_arr, train_masks_arr = prep_set(train_data_lst)
     val_imgs_arr, val_masks_arr = prep_set(val_data_lst)
+
     db = [
         train_imgs_arr,
         train_masks_arr,
@@ -36,25 +36,10 @@ def prep_set_for_global_classifier():
         val_masks_arr
     ]
 
-
-    # db = [
-    #     load_from_h5(os.path.join(training_path, 'db_train_imgs_arr.h5')),
-    #     load_from_h5(os.path.join(training_path, 'db_train_masks_arr.h5')).astype(np.uint8),
-    #     load_from_h5(os.path.join(training_path, 'db_val_imgs_arr.h5')),
-    #     load_from_h5(os.path.join(training_path, 'db_val_masks_arr.h5')).astype(np.uint8)
-    # ]
     db[0] = np.rollaxis(db[0], 1, 4)
     db[1] = np.rollaxis(db[1], 1, 4)
     db[2] = np.rollaxis(db[2], 1, 4)
     db[3] = np.rollaxis(db[3], 1, 4)
-
-    nb_train = db[0].shape[0]
-    nb_val = db[3].shape[0]
-
-    train_global_label = np.sum(db[1], axis=(1, 2, 3))
-    train_global_label[train_global_label > 0] = 1
-    val_global_label = np.sum(db[3], axis=(1, 2, 3))
-    val_global_label[val_global_label > 0] = 1
 
     model_name = 'U-Net_WCE'
     class_weights = get_class_weights(db[1])
@@ -66,27 +51,44 @@ def prep_set_for_global_classifier():
     val_scores_maps = model.predict(db[2], batch_size=5, verbose=1)
     val_scores_maps = val_scores_maps[:, :, :, 1]  # Taking only scores for ptx
 
-    train_scores_maps *= train_lung_masks_arr.squeeze()
-    val_scores_maps *= val_lung_masks_arr.squeeze()
+    train_l_scores, train_r_scores, train_l_labels, train_r_labels = \
+        separate_maps_to_lungs(train_data_lst, train_scores_maps, db[1])
+    val_l_scores, val_r_scores, val_l_labels, val_r_labels = \
+        separate_maps_to_lungs(val_data_lst, val_scores_maps, db[3])
 
-    # # normalizing data
-    # train_scores_maps *= 255
-    # val_scores_maps *= 255
-    # mean_val = 127
-    # train_scores_maps = train_scores_maps - mean_val
-    # val_scores_maps = val_scores_maps - mean_val
+    save_to_h5((train_l_scores, train_r_scores), os.path.join(training_path, 'train_scores_maps_arr.h5'))
+    save_to_h5((val_l_scores, val_r_scores), os.path.join(training_path, 'val_scores_maps_arr.h5'))
+    save_to_h5((train_l_labels, train_r_labels), os.path.join(training_path, 'train_global_label_arr.h5'))
+    save_to_h5((val_l_labels, val_r_labels), os.path.join(training_path, 'val_global_label_arr.h5'))
 
-    train_scores_maps_resized = np.zeros((nb_train, im_sz, im_sz, 1))
-    for i in range(nb_train):
-        train_scores_maps_resized[i] = np.expand_dims(imresize(train_scores_maps[i], (im_sz, im_sz)), 3)
 
-    val_scores_maps_resized = np.zeros((nb_val, im_sz, im_sz, 1))
-    for i in range(nb_val):
-        val_scores_maps_resized[i] = np.expand_dims(imresize(val_scores_maps[i], (im_sz, im_sz)), 3)
-    save_to_h5(train_scores_maps_resized, os.path.join(training_path, 'train_scores_maps_arr.h5'))
-    save_to_h5(val_scores_maps_resized, os.path.join(training_path, 'val_scores_maps_arr.h5'))
-    save_to_h5(train_global_label, os.path.join(training_path, 'train_global_label_arr.h5'))
-    save_to_h5(val_global_label, os.path.join(training_path, 'val_global_label_arr.h5'))
+def separate_maps_to_lungs(data_lst, scores_map, labels_maps):
+    lung_masks_arr = get_lung_masks(data_lst).squeeze()
+    nb_items = len(data_lst)
+    l_scores = np.zeros((nb_items, im_sz, im_sz, 1))
+    r_scores = np.zeros((nb_items, im_sz, im_sz, 1))
+    l_labels = np.zeros((nb_items,), dtype=np.uint8)
+    r_labels = np.zeros((nb_items,), dtype=np.uint8)
+    for i in range(nb_items):
+        lung_mask = seperate_lungs(lung_masks_arr[i])
+        l_scores[i], r_scores[i] = seperate_and_process_case_to_lungs(scores_map[i], lung_mask)
+        l_labels[i] = np.sum(labels_maps[i] * lung_mask.l_lung_mask)
+        r_labels[i] = np.sum(labels_maps[i] * lung_mask.r_lung_mask)
+
+    l_labels[l_labels > 0] = 1
+    r_labels[r_labels > 0] = 1
+
+    return l_scores, r_scores, l_labels, r_labels
+
+
+def seperate_and_process_case_to_lungs(score_map, lung_mask):
+    left_bb = get_lung_bb(lung_mask.l_lung_mask)
+    right_bb = get_lung_bb(lung_mask.r_lung_mask)
+    left_map = score_map[left_bb[0]:left_bb[2], left_bb[1]:left_bb[3]]
+    right_map = score_map[right_bb[0]:right_bb[2], right_bb[1]:right_bb[3]]
+    left_map = imresize(left_map, (im_sz, im_sz))
+    right_map = imresize(right_map, (im_sz, im_sz))
+    return left_map, right_map
 
 
 def build_model_vgg16_based(nb_epochs):
@@ -150,8 +152,13 @@ def build_model(nb_epochs):
     return model
 
 
-def train_model():
-    # prep_set_for_global_classifier()
+def train_model(side):
+    prep_set_for_global_classifier()
+
+    if side == 'left':
+        side_ind = 0
+    else:
+        side_ind = 1
     print('Loading data...')
     db = [
         load_from_h5(os.path.join(training_path, 'train_scores_maps_arr.h5')),
@@ -175,14 +182,14 @@ def train_model():
     # db[0] = np.repeat(db[0], 3, 3)
     # db[2] = np.repeat(db[2], 3, 3)
 
-    mean_val = np.mean(db[0])
-    db[0] -= mean_val
-    db[2] -= mean_val
+    mean_val = np.mean(db[0][side_ind])
+    db[0][side_ind] -= mean_val
+    db[2][side_ind] -= mean_val
     nb_epochs = 100
     batch_size = 100
     model = build_model(nb_epochs)
     # model = build_model_vgg16_based(nb_epochs)
-    model_name = 'global_scratch'
+    model_name = 'global_scratch' + '_' + side
     # model_name = 'global_vgg16'
     model.summary()
     model_file_name = 'ptx_model_' + model_name + '.hdf5'
@@ -193,8 +200,8 @@ def train_model():
     plot_curves_callback = PlotLearningCurves()
     callbacks = [model_checkpoint, early_stopping, reduce_lr_on_plateu, plot_curves_callback]
     print('Start fitting...')
-    model.fit(db[0], db[1], batch_size=batch_size, epochs=nb_epochs,
-              validation_data=(db[2], db[3]),
+    model.fit(db[0][side_ind], db[1][side_ind], batch_size=batch_size, epochs=nb_epochs,
+              validation_data=(db[2][side_ind], db[3][side_ind]),
               verbose=1, shuffle=True,
               callbacks=callbacks)
 
@@ -203,4 +210,4 @@ def train_model():
 
 
 if __name__ == '__main__':
-    train_model()
+    train_model('left')
