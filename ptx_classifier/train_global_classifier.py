@@ -10,24 +10,39 @@ import matplotlib.pyplot as plt
 from keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
 from keras.layers import Conv2D, LeakyReLU, MaxPooling2D, Dropout, Flatten, Dense, Activation
 from keras.models import Sequential, Model
-from keras.optimizers import Adam
+from keras.optimizers import Adam, SGD
 from keras.applications.vgg16 import VGG16
 
-from image import imresize
-from misc import load_from_h5, save_to_h5
+from aid_funcs.image import imresize, im_rescale
+from aid_funcs.misc import load_from_h5, save_to_h5
 from utils import *
 from aid_funcs.keraswrapper import load_model, get_class_weights, weighted_pixelwise_crossentropy, dice_coef, \
-    PlotLearningCurves
+    PlotLearningCurves, plot_conv_weights
+from prep_data_for_unet import get_lung_masks, prep_set
+im_sz = 128
 
-im_sz = 48
+
 def prep_set_for_global_classifier():
     print('Loading data...')
+    train_data_lst, val_data_lst = process_and_augment_data()
+    val_lung_masks_arr = get_lung_masks(val_data_lst)
+    train_lung_masks_arr = get_lung_masks(train_data_lst)
+    train_imgs_arr, train_masks_arr = prep_set(train_data_lst)
+    val_imgs_arr, val_masks_arr = prep_set(val_data_lst)
     db = [
-        load_from_h5(os.path.join(training_path, 'db_train_imgs_arr.h5')),
-        load_from_h5(os.path.join(training_path, 'db_train_masks_arr.h5')).astype(np.uint8),
-        load_from_h5(os.path.join(training_path, 'db_val_imgs_arr.h5')),
-        load_from_h5(os.path.join(training_path, 'db_val_masks_arr.h5')).astype(np.uint8)
+        train_imgs_arr,
+        train_masks_arr,
+        val_imgs_arr,
+        val_masks_arr
     ]
+
+
+    # db = [
+    #     load_from_h5(os.path.join(training_path, 'db_train_imgs_arr.h5')),
+    #     load_from_h5(os.path.join(training_path, 'db_train_masks_arr.h5')).astype(np.uint8),
+    #     load_from_h5(os.path.join(training_path, 'db_val_imgs_arr.h5')),
+    #     load_from_h5(os.path.join(training_path, 'db_val_masks_arr.h5')).astype(np.uint8)
+    # ]
     db[0] = np.rollaxis(db[0], 1, 4)
     db[1] = np.rollaxis(db[1], 1, 4)
     db[2] = np.rollaxis(db[2], 1, 4)
@@ -43,7 +58,7 @@ def prep_set_for_global_classifier():
 
     model_name = 'U-Net_WCE'
     class_weights = get_class_weights(db[1])
-    custom_objects={'loss': weighted_pixelwise_crossentropy(class_weights), 'dice_coef':dice_coef}
+    custom_objects = {'loss': weighted_pixelwise_crossentropy(class_weights), 'dice_coef': dice_coef}
     model = load_model('ptx_model_' + model_name + '.hdf5', custom_objects=custom_objects)
 
     train_scores_maps = model.predict(db[0], batch_size=5, verbose=1)
@@ -51,11 +66,15 @@ def prep_set_for_global_classifier():
     val_scores_maps = model.predict(db[2], batch_size=5, verbose=1)
     val_scores_maps = val_scores_maps[:, :, :, 1]  # Taking only scores for ptx
 
-    #normalizing data
-    mean_val = np.mean(train_scores_maps)
-    std_val = np.std(train_scores_maps)
-    train_scores_maps = (train_scores_maps - mean_val) / std_val
-    val_scores_maps = (val_scores_maps - mean_val) / std_val
+    train_scores_maps *= train_lung_masks_arr.squeeze()
+    val_scores_maps *= val_lung_masks_arr.squeeze()
+
+    # # normalizing data
+    # train_scores_maps *= 255
+    # val_scores_maps *= 255
+    # mean_val = 127
+    # train_scores_maps = train_scores_maps - mean_val
+    # val_scores_maps = val_scores_maps - mean_val
 
     train_scores_maps_resized = np.zeros((nb_train, im_sz, im_sz, 1))
     for i in range(nb_train):
@@ -73,6 +92,10 @@ def prep_set_for_global_classifier():
 def build_model_vgg16_based(nb_epochs):
     base_model = VGG16(weights='imagenet', include_top=False,
                        input_shape=(im_sz, im_sz, 3))
+
+    for layer in base_model.layers:
+        layer.trainable = False
+
     x = base_model.get_layer('block4_pool').output
     x = Flatten()(x)
     x = Dense(64, activation='relu')(x)
@@ -81,34 +104,45 @@ def build_model_vgg16_based(nb_epochs):
     lr = 0.00001
     decay_fac = 1
     optim_fun = Adam(lr=lr, decay=decay_fac * lr / nb_epochs)
-
-    model.compile(loss='binary_crossentropy',
-                  optimizer=optim_fun,
+    from keras.optimizers import SGD
+    sgd = SGD(lr=0.1, decay=1e-6, momentum=0.9, nesterov=True)
+    model.compile(optimizer=sgd,
+                  loss='binary_crossentropy',
                   metrics=['accuracy'])
+
+    # model.compile(loss='binary_crossentropy',
+    #               optimizer=optim_fun,
+    #               metrics=['accuracy'])
     return model
 
 
 def build_model(nb_epochs):
     model = Sequential()
 
-    model.add(Conv2D(16, (3, 3), padding='same', input_shape=(im_sz, im_sz, 1), kernel_initializer='he_normal'))
+    model.add(Conv2D(32, (7, 7), padding='valid', input_shape=(im_sz, im_sz, 1), kernel_initializer='he_normal'))
     model.add(LeakyReLU(0.0))
-    model.add(MaxPooling2D(pool_size=(2, 2)))
+    model.add(MaxPooling2D(pool_size=(4, 4)))
 
-    model.add(Conv2D(32, (3, 3), padding='same', kernel_initializer='he_normal'))
+    model.add(Conv2D(64, (5, 5), padding='valid', kernel_initializer='he_normal'))
     model.add(LeakyReLU(0.0))
-    model.add(MaxPooling2D(pool_size=(2, 2)))
+    model.add(MaxPooling2D(pool_size=(4, 4)))
+
+    model.add(Conv2D(128, (3, 3), padding='valid', kernel_initializer='he_normal'))
+    model.add(LeakyReLU(0.0))
+    model.add(MaxPooling2D(pool_size=(4, 4)))
 
     model.add(Flatten())
 
-    model.add(Dense(64))
-    model.add(LeakyReLU(0.0))
+    model.add(Dense(256, activation='relu'))
+    model.add(Dense(128, activation='relu'))
+    # model.add(Dense(64, activation='relu'))
     # model.add(Dropout(0.5))
 
     model.add(Dense(1, activation='softmax'))
-    lr = 0.001
+    lr = 0.0001
     decay_fac = 1
-    optim_fun = Adam(lr=lr, decay=decay_fac * lr / nb_epochs)
+    # optim_fun = Adam(lr=lr, decay=decay_fac * lr / nb_epochs)
+    optim_fun = SGD(lr=0.1, decay=1e-6, momentum=0.9, nesterov=True)
 
     model.compile(loss='binary_crossentropy',
                   optimizer=optim_fun,
@@ -121,12 +155,10 @@ def train_model():
     print('Loading data...')
     db = [
         load_from_h5(os.path.join(training_path, 'train_scores_maps_arr.h5')),
-        load_from_h5(os.path.join(training_path, 'train_global_label_arr.h5')),
-        load_from_h5(os.path.join(training_path, 'val_scores_maps_arr.h5')).astype(np.uint8),
+        load_from_h5(os.path.join(training_path, 'train_global_label_arr.h5')).astype(np.uint8),
+        load_from_h5(os.path.join(training_path, 'val_scores_maps_arr.h5')),
         load_from_h5(os.path.join(training_path, 'val_global_label_arr.h5')).astype(np.uint8)
     ]
-    db[0] = np.repeat(db[0], 3, 3)
-    db[2] = np.repeat(db[2], 3, 3)
     # for i in range(db[0].shape[0]):
     #     label = str(db[1][i])
     #     img = db[0][i].squeeze()
@@ -134,11 +166,24 @@ def train_model():
     #     plt.title(label)
     #     plt.show()
     #     plt.pause(1e-3)
+
+    # for i in range(db[0].shape[0]):
+    #     db[0][i,:,:,0] = im_rescale(db[0][i].squeeze(), -127, 127)
+    # for i in range(db[2].shape[0]):
+    #     db[2][i,:,:,0] = im_rescale(db[2][i].squeeze(), -127, 127)
+
+    # db[0] = np.repeat(db[0], 3, 3)
+    # db[2] = np.repeat(db[2], 3, 3)
+
+    mean_val = np.mean(db[0])
+    db[0] -= mean_val
+    db[2] -= mean_val
     nb_epochs = 100
     batch_size = 100
-    # model = build_model(nb_epochs)
-    model = build_model_vgg16_based(nb_epochs)
-    model_name = 'global_vgg16'
+    model = build_model(nb_epochs)
+    # model = build_model_vgg16_based(nb_epochs)
+    model_name = 'global_scratch'
+    # model_name = 'global_vgg16'
     model.summary()
     model_file_name = 'ptx_model_' + model_name + '.hdf5'
 
@@ -152,6 +197,7 @@ def train_model():
               validation_data=(db[2], db[3]),
               verbose=1, shuffle=True,
               callbacks=callbacks)
+
 
     print("Done!")
 
