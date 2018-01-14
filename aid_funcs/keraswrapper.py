@@ -12,6 +12,10 @@ from keras import backend as K
 import keras.callbacks
 from drawnow import drawnow
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
+import numpy.ma as ma
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+
 from collections import OrderedDict, Counter
 from matplotlib.legend_handler import HandlerLine2D
 import time
@@ -167,6 +171,62 @@ def print_model_to_file(model, file_name=None):
         file_name = 'model_' + time.strftime("%H_%M_%d_%m_%Y") + '.png'
     plot_model(model, to_file=file_name, show_shapes=True)
 
+
+
+
+def make_mosaic(imgs, nrows, ncols, border=1):
+    """
+    Given a set of images with all the same shape, makes a
+    mosaic with nrows and ncols
+    """
+
+    nimgs = imgs.shape[0]
+    imshape = imgs.shape[1:]
+
+    mosaic = ma.masked_all((nrows * imshape[0] + (nrows - 1) * border,
+                            ncols * imshape[1] + (ncols - 1) * border),
+                           dtype=np.float32)
+
+    paddedh = imshape[0] + border
+    paddedw = imshape[1] + border
+    for i in range(nimgs):
+        row = int(np.floor(i / ncols))
+        col = i % ncols
+
+        mosaic[row * paddedh:row * paddedh + imshape[0],
+        col * paddedw:col * paddedw + imshape[1]] = imgs[i]
+    return mosaic
+
+
+def nice_imshow(ax, data, vmin=None, vmax=None, cmap=None):
+    """Wrapper around plt.imshow"""
+    if cmap is None:
+        cmap = cm.jet
+    if vmin is None:
+        vmin = data.min()
+    if vmax is None:
+        vmax = data.max()
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("right", size="5%", pad=0.05)
+    im = ax.imshow(data, vmin=vmin, vmax=vmax, interpolation='nearest', cmap=cmap)
+    plt.colorbar(im, cax=cax)
+
+
+
+def plot_conv_weights(model, layer):
+    # Visualize weights
+    # W = model.layers[layer].W.get_value(borrow=True)
+    W = model.layers[layer].get_weights()[0]
+    W = np.squeeze(W)
+
+    if len(W.shape) == 4:
+        W = W.reshape((-1, W.shape[2], W.shape[3]))
+    print("W shape : ", W.shape)
+
+    plt.figure(figsize=(15, 15))
+    plt.title('conv weights')
+    s = int(np.sqrt(W.shape[0]) + 1)
+    nice_imshow(plt.gca(), make_mosaic(W, s, s), cmap=cm.binary)
 
 def plot_first_layer(model):
     layer = model.layers[0]
