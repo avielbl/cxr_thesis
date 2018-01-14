@@ -72,8 +72,8 @@ def separate_maps_to_lungs(data_lst, scores_map, labels_maps):
     for i in range(nb_items):
         lung_mask = seperate_lungs(lung_masks_arr[i])
         l_scores[i], r_scores[i] = seperate_and_process_case_to_lungs(scores_map[i], lung_mask)
-        l_labels[i] = np.sum(labels_maps[i] * lung_mask.l_lung_mask)
-        r_labels[i] = np.sum(labels_maps[i] * lung_mask.r_lung_mask)
+        l_labels[i] = np.sum(labels_maps[i].squeeze() * lung_mask.l_lung_mask)
+        r_labels[i] = np.sum(labels_maps[i].squeeze() * lung_mask.r_lung_mask)
 
     l_labels[l_labels > 0] = 1
     r_labels[r_labels > 0] = 1
@@ -88,6 +88,8 @@ def seperate_and_process_case_to_lungs(score_map, lung_mask):
     right_map = score_map[right_bb[0]:right_bb[2], right_bb[1]:right_bb[3]]
     left_map = imresize(left_map, (im_sz, im_sz))
     right_map = imresize(right_map, (im_sz, im_sz))
+    left_map = np.expand_dims(left_map, 3)
+    right_map = np.expand_dims(right_map, 3)
     return left_map, right_map
 
 
@@ -123,11 +125,11 @@ def build_model(nb_epochs):
 
     model.add(Conv2D(32, (7, 7), padding='valid', input_shape=(im_sz, im_sz, 1), kernel_initializer='he_normal'))
     model.add(LeakyReLU(0.0))
-    model.add(MaxPooling2D(pool_size=(4, 4)))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
 
     model.add(Conv2D(64, (5, 5), padding='valid', kernel_initializer='he_normal'))
     model.add(LeakyReLU(0.0))
-    model.add(MaxPooling2D(pool_size=(4, 4)))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
 
     model.add(Conv2D(128, (3, 3), padding='valid', kernel_initializer='he_normal'))
     model.add(LeakyReLU(0.0))
@@ -141,10 +143,10 @@ def build_model(nb_epochs):
     # model.add(Dropout(0.5))
 
     model.add(Dense(1, activation='softmax'))
-    lr = 0.0001
+    lr = 0.01
     decay_fac = 1
-    # optim_fun = Adam(lr=lr, decay=decay_fac * lr / nb_epochs)
-    optim_fun = SGD(lr=0.1, decay=1e-6, momentum=0.9, nesterov=True)
+    optim_fun = Adam(lr=lr, decay=decay_fac * lr / nb_epochs)
+    # optim_fun = SGD(lr=0.1, decay=1e-6, momentum=0.9, nesterov=True)
 
     model.compile(loss='binary_crossentropy',
                   optimizer=optim_fun,
@@ -153,19 +155,12 @@ def build_model(nb_epochs):
 
 
 def train_model(side):
-    prep_set_for_global_classifier()
 
     if side == 'left':
         side_ind = 0
     else:
         side_ind = 1
     print('Loading data...')
-    db = [
-        load_from_h5(os.path.join(training_path, 'train_scores_maps_arr.h5')),
-        load_from_h5(os.path.join(training_path, 'train_global_label_arr.h5')).astype(np.uint8),
-        load_from_h5(os.path.join(training_path, 'val_scores_maps_arr.h5')),
-        load_from_h5(os.path.join(training_path, 'val_global_label_arr.h5')).astype(np.uint8)
-    ]
     # for i in range(db[0].shape[0]):
     #     label = str(db[1][i])
     #     img = db[0][i].squeeze()
@@ -183,8 +178,12 @@ def train_model(side):
     # db[2] = np.repeat(db[2], 3, 3)
 
     mean_val = np.mean(db[0][side_ind])
+    std_val = np.std(db[0][side_ind])
     db[0][side_ind] -= mean_val
     db[2][side_ind] -= mean_val
+    db[0][side_ind] /= std_val
+    db[2][side_ind] /= std_val
+
     nb_epochs = 100
     batch_size = 100
     model = build_model(nb_epochs)
@@ -210,4 +209,14 @@ def train_model(side):
 
 
 if __name__ == '__main__':
+    # prep_set_for_global_classifier()
+
+    db = [
+        load_from_h5(os.path.join(training_path, 'train_scores_maps_arr.h5')),
+        load_from_h5(os.path.join(training_path, 'train_global_label_arr.h5')).astype(np.uint8),
+        load_from_h5(os.path.join(training_path, 'val_scores_maps_arr.h5')),
+        load_from_h5(os.path.join(training_path, 'val_global_label_arr.h5')).astype(np.uint8)
+    ]
+
     train_model('left')
+    train_model('right')
