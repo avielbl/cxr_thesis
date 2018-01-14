@@ -8,7 +8,7 @@ from scipy import ndimage
 from skimage import measure, morphology
 
 from aid_funcs import CXRLoadNPrep as clp
-from . import params
+import params
 im_size = params.im_size
 
 lung_masks = namedtuple('lung_masks', ['r_lung_mask', 'l_lung_mask'])
@@ -112,7 +112,14 @@ def pre_process_images(images_arr):
 def seperate_lungs(seg_map):
     sz = seg_map.shape
     label_im, nb_labels = ndimage.label(seg_map)
-    assert nb_labels < 3, 'More than 2 objects detected in the segmentation map'
+    if nb_labels > 2:
+        areas = ndimage.sum(seg_map, label_im, range(nb_labels + 1))
+        sorted_areas = np.sort(areas)
+        smallest_lung_ares = sorted_areas[-2]
+        mask_size = areas < smallest_lung_ares
+        remove_pixel = mask_size[label_im]
+        label_im[remove_pixel] = 0
+
     r_lung_mask = np.zeros_like(label_im)
     l_lung_mask = np.zeros_like(label_im)
     labels = np.unique(label_im)
