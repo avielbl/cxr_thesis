@@ -123,29 +123,30 @@ def build_model_vgg16_based(nb_epochs):
 def build_model(nb_epochs):
     model = Sequential()
 
-    model.add(Conv2D(32, (7, 7), padding='valid', input_shape=(im_sz, im_sz, 1), kernel_initializer='he_normal'))
-    model.add(LeakyReLU(0.0))
+    model.add(Conv2D(32, (5, 5), padding='same', input_shape=(im_sz, im_sz, 1), kernel_initializer='he_normal'))
+    model.add(LeakyReLU(0.1))
     model.add(MaxPooling2D(pool_size=(2, 2)))
 
-    model.add(Conv2D(64, (5, 5), padding='valid', kernel_initializer='he_normal'))
-    model.add(LeakyReLU(0.0))
+    model.add(Conv2D(64, (5, 5), padding='same', kernel_initializer='he_normal'))
+    model.add(LeakyReLU(0.1))
     model.add(MaxPooling2D(pool_size=(2, 2)))
 
-    model.add(Conv2D(128, (3, 3), padding='valid', kernel_initializer='he_normal'))
-    model.add(LeakyReLU(0.0))
-    model.add(MaxPooling2D(pool_size=(4, 4)))
+    # model.add(Conv2D(128, (3, 3), padding='same', kernel_initializer='he_normal'))
+    # model.add(LeakyReLU(0.1))
+    # model.add(MaxPooling2D(pool_size=(2, 2)))
 
     model.add(Flatten())
 
     model.add(Dense(256, activation='relu'))
+    model.add(Dropout(0.5))
     model.add(Dense(128, activation='relu'))
     # model.add(Dense(64, activation='relu'))
-    # model.add(Dropout(0.5))
+    model.add(Dropout(0.5))
 
-    model.add(Dense(1, activation='softmax'))
-    lr = 0.01
+    model.add(Dense(1, activation='sigmoid'))
+    lr = 0.00001
     decay_fac = 1
-    optim_fun = Adam(lr=lr, decay=decay_fac * lr / nb_epochs)
+    optim_fun = Adam(lr=lr)
     # optim_fun = SGD(lr=0.1, decay=1e-6, momentum=0.9, nesterov=True)
 
     model.compile(loss='binary_crossentropy',
@@ -177,15 +178,15 @@ def train_model(side):
     # db[0] = np.repeat(db[0], 3, 3)
     # db[2] = np.repeat(db[2], 3, 3)
 
-    mean_val = np.mean(db[0][side_ind])
-    std_val = np.std(db[0][side_ind])
+    mean_val = 0.5 #np.mean(db[0][side_ind])
+    std_val = 1 #np.std(db[0][side_ind])
     db[0][side_ind] -= mean_val
     db[2][side_ind] -= mean_val
     db[0][side_ind] /= std_val
     db[2][side_ind] /= std_val
 
     nb_epochs = 100
-    batch_size = 100
+    batch_size = 500
     model = build_model(nb_epochs)
     # model = build_model_vgg16_based(nb_epochs)
     model_name = 'global_scratch' + '_' + side
