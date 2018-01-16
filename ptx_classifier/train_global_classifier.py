@@ -12,6 +12,7 @@ from keras.layers import Conv2D, LeakyReLU, MaxPooling2D, Dropout, Flatten, Dens
 from keras.models import Sequential, Model
 from keras.optimizers import Adam, SGD
 from keras.applications.vgg16 import VGG16
+from keras.utils import to_categorical
 
 from aid_funcs.image import imresize, im_rescale
 from aid_funcs.misc import load_from_h5, save_to_h5
@@ -20,7 +21,7 @@ from utils import *
 from aid_funcs.keraswrapper import load_model, get_class_weights, weighted_pixelwise_crossentropy, dice_coef, \
     PlotLearningCurves
 from prep_data_for_unet import get_lung_masks, prep_set
-im_sz = 128
+im_sz = 32
 
 
 def prep_set_for_global_classifier():
@@ -131,19 +132,23 @@ def build_model(nb_epochs):
     model.add(LeakyReLU(0.1))
     model.add(MaxPooling2D(pool_size=(2, 2)))
 
-    # model.add(Conv2D(128, (3, 3), padding='same', kernel_initializer='he_normal'))
-    # model.add(LeakyReLU(0.1))
-    # model.add(MaxPooling2D(pool_size=(2, 2)))
+    model.add(Conv2D(128, (3, 3), padding='same', kernel_initializer='he_normal'))
+    model.add(LeakyReLU(0.1))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
+
+    model.add(Conv2D(256, (3, 3), padding='same', kernel_initializer='he_normal'))
+    model.add(LeakyReLU(0.1))
+    model.add(MaxPooling2D(pool_size=(2, 2)))
 
     model.add(Flatten())
 
-    model.add(Dense(256, activation='relu'))
     model.add(Dropout(0.5))
-    model.add(Dense(128, activation='relu'))
+    model.add(Dense(256, activation='relu'))
+    # model.add(Dense(128, activation='relu'))
     # model.add(Dense(64, activation='relu'))
     model.add(Dropout(0.5))
 
-    model.add(Dense(1, activation='sigmoid'))
+    model.add(Dense(2, activation='softmax'))
     lr = 0.00001
     decay_fac = 1
     optim_fun = Adam(lr=lr)
@@ -177,7 +182,14 @@ def train_model(side):
 
     # db[0] = np.repeat(db[0], 3, 3)
     # db[2] = np.repeat(db[2], 3, 3)
-
+    nb_train = db[0][side_ind].shape[0]
+    nb_val = db[2][side_ind].shape[0]
+    train_imgs = np.zeros((nb_train, im_sz, im_sz, 1))
+    val_imgs = np.zeros((nb_val, im_sz, im_sz, 1))
+    for i in range(db[0][side_ind].shape[0]):
+        train_imgs[i,:,:,0] = imresize(db[0][side_ind][i].squeeze(), (im_sz, im_sz))
+    for i in range(db[2][side_ind].shape[0]):
+        val_imgs[i,:,:,0] = imresize(db[2][side_ind][i].squeeze(), (im_sz, im_sz))
     mean_val = 0.5 #np.mean(db[0][side_ind])
     std_val = 1 #np.std(db[0][side_ind])
     db[0][side_ind] -= mean_val
@@ -186,7 +198,7 @@ def train_model(side):
     db[2][side_ind] /= std_val
 
     nb_epochs = 100
-    batch_size = 500
+    batch_size = 200
     model = build_model(nb_epochs)
     # model = build_model_vgg16_based(nb_epochs)
     model_name = 'global_scratch' + '_' + side
@@ -200,8 +212,8 @@ def train_model(side):
     plot_curves_callback = PlotLearningCurves()
     callbacks = [model_checkpoint, early_stopping, reduce_lr_on_plateu, plot_curves_callback]
     print('Start fitting...')
-    model.fit(db[0][side_ind], db[1][side_ind], batch_size=batch_size, epochs=nb_epochs,
-              validation_data=(db[2][side_ind], db[3][side_ind]),
+    model.fit(train_imgs, to_categorical(db[1][side_ind], 2), batch_size=batch_size, epochs=nb_epochs,
+              validation_data=(val_imgs, to_categorical(db[3][side_ind], 2)),
               verbose=1, shuffle=True,
               callbacks=callbacks)
 
