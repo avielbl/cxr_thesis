@@ -21,7 +21,7 @@ from utils import *
 from aid_funcs.keraswrapper import load_model, get_class_weights, weighted_pixelwise_crossentropy, dice_coef, \
     PlotLearningCurves
 from prep_data_for_unet import get_lung_masks, prep_set
-im_sz = 32
+im_sz = 104
 
 
 def prep_set_for_global_classifier():
@@ -57,36 +57,47 @@ def prep_set_for_global_classifier():
     val_l_scores, val_r_scores, val_l_labels, val_r_labels = \
         separate_maps_to_lungs(val_data_lst, val_scores_maps, db[3])
 
+    train_l_orig_images, train_r_orig_images = \
+        separate_maps_to_lungs(train_data_lst, train_imgs_arr)
+    val_l_orig_images, val_r_orig_images = \
+        separate_maps_to_lungs(val_data_lst, val_imgs_arr)
     save_to_h5((train_l_scores, train_r_scores), os.path.join(training_path, 'train_scores_maps_arr.h5'))
     save_to_h5((val_l_scores, val_r_scores), os.path.join(training_path, 'val_scores_maps_arr.h5'))
+    save_to_h5((train_l_orig_images, train_r_orig_images), os.path.join(training_path, 'train_orig_images_arr.h5'))
+    save_to_h5((val_l_orig_images, val_r_orig_images), os.path.join(training_path, 'val_orig_images_arr.h5'))
     save_to_h5((train_l_labels, train_r_labels), os.path.join(training_path, 'train_global_label_arr.h5'))
     save_to_h5((val_l_labels, val_r_labels), os.path.join(training_path, 'val_global_label_arr.h5'))
 
 
-def separate_maps_to_lungs(data_lst, scores_map, labels_maps):
+def separate_maps_to_lungs(data_lst, images_arr, labels_maps=None):
     lung_masks_arr = get_lung_masks(data_lst).squeeze()
     nb_items = len(data_lst)
-    l_scores = np.zeros((nb_items, im_sz, im_sz, 1))
-    r_scores = np.zeros((nb_items, im_sz, im_sz, 1))
-    l_labels = np.zeros((nb_items,), dtype=np.uint8)
-    r_labels = np.zeros((nb_items,), dtype=np.uint8)
+    l_images_arr = np.zeros((nb_items, im_sz, im_sz, 1))
+    r_images_arr = np.zeros((nb_items, im_sz, im_sz, 1))
+    if labels_maps is not None:
+        l_labels = np.zeros((nb_items,), dtype=np.uint8)
+        r_labels = np.zeros((nb_items,), dtype=np.uint8)
     for i in range(nb_items):
         lung_mask = seperate_lungs(lung_masks_arr[i])
-        l_scores[i], r_scores[i] = seperate_and_process_case_to_lungs(scores_map[i], lung_mask)
-        l_labels[i] = np.sum(labels_maps[i].squeeze() * lung_mask.l_lung_mask)
-        r_labels[i] = np.sum(labels_maps[i].squeeze() * lung_mask.r_lung_mask)
+        l_images_arr[i], r_images_arr[i] = seperate_and_process_case_to_lungs(images_arr[i], lung_mask)
+        if labels_maps is not None:
+            l_labels[i] = np.sum(labels_maps[i].squeeze() * lung_mask.l_lung_mask)
+            r_labels[i] = np.sum(labels_maps[i].squeeze() * lung_mask.r_lung_mask)
 
-    l_labels[l_labels > 0] = 1
-    r_labels[r_labels > 0] = 1
+    if labels_maps is not None:
+        l_labels[l_labels > 0] = 1
+        r_labels[r_labels > 0] = 1
+        return l_images_arr, r_images_arr, l_labels, r_labels
+    else:
+        return l_images_arr, r_images_arr
 
-    return l_scores, r_scores, l_labels, r_labels
 
-
-def seperate_and_process_case_to_lungs(score_map, lung_mask):
+def seperate_and_process_case_to_lungs(img_arr, lung_mask):
+    img_arr = img_arr.squeeze()
     left_bb = get_lung_bb(lung_mask.l_lung_mask)
     right_bb = get_lung_bb(lung_mask.r_lung_mask)
-    left_map = score_map[left_bb[0]:left_bb[2], left_bb[1]:left_bb[3]]
-    right_map = score_map[right_bb[0]:right_bb[2], right_bb[1]:right_bb[3]]
+    left_map = img_arr[left_bb[0]:left_bb[2], left_bb[1]:left_bb[3]]
+    right_map = img_arr[right_bb[0]:right_bb[2], right_bb[1]:right_bb[3]]
     left_map = imresize(left_map, (im_sz, im_sz))
     right_map = imresize(right_map, (im_sz, im_sz))
     left_map = np.expand_dims(left_map, 3)
@@ -124,34 +135,30 @@ def build_model_vgg16_based(nb_epochs):
 def build_model(nb_epochs):
     model = Sequential()
 
-    model.add(Conv2D(32, (5, 5), padding='same', input_shape=(im_sz, im_sz, 1), kernel_initializer='he_normal'))
+    model.add(Conv2D(16, (5, 5), padding='same', input_shape=(im_sz, im_sz, 2), kernel_initializer='he_normal'))
     model.add(LeakyReLU(0.1))
     model.add(MaxPooling2D(pool_size=(2, 2)))
 
-    model.add(Conv2D(64, (5, 5), padding='same', kernel_initializer='he_normal'))
+    model.add(Conv2D(32, (5, 5), padding='same', kernel_initializer='he_normal'))
     model.add(LeakyReLU(0.1))
     model.add(MaxPooling2D(pool_size=(2, 2)))
 
-    model.add(Conv2D(128, (3, 3), padding='same', kernel_initializer='he_normal'))
-    model.add(LeakyReLU(0.1))
-    model.add(MaxPooling2D(pool_size=(2, 2)))
-
-    model.add(Conv2D(256, (3, 3), padding='same', kernel_initializer='he_normal'))
+    model.add(Conv2D(64, (3, 3), padding='same', kernel_initializer='he_normal'))
     model.add(LeakyReLU(0.1))
     model.add(MaxPooling2D(pool_size=(2, 2)))
 
     model.add(Flatten())
 
     model.add(Dropout(0.5))
-    model.add(Dense(256, activation='relu'))
+    model.add(Dense(100, activation='relu'))
     # model.add(Dense(128, activation='relu'))
     # model.add(Dense(64, activation='relu'))
     model.add(Dropout(0.5))
 
     model.add(Dense(2, activation='softmax'))
-    lr = 0.00001
-    decay_fac = 1
-    optim_fun = Adam(lr=lr)
+    lr = 0.0001
+    decay_fac = 0.00002
+    optim_fun = Adam(lr=lr, decay=decay_fac)
     # optim_fun = SGD(lr=0.1, decay=1e-6, momentum=0.9, nesterov=True)
 
     model.compile(loss='binary_crossentropy',
@@ -167,14 +174,7 @@ def train_model(side):
     else:
         side_ind = 1
     print('Loading data...')
-    # for i in range(db[0].shape[0]):
-    #     label = str(db[1][i])
-    #     img = db[0][i].squeeze()
-    #     plt.imshow(img)
-    #     plt.title(label)
-    #     plt.show()
-    #     plt.pause(1e-3)
-
+    ##preping data for vgg16
     # for i in range(db[0].shape[0]):
     #     db[0][i,:,:,0] = im_rescale(db[0][i].squeeze(), -127, 127)
     # for i in range(db[2].shape[0]):
@@ -182,6 +182,33 @@ def train_model(side):
 
     # db[0] = np.repeat(db[0], 3, 3)
     # db[2] = np.repeat(db[2], 3, 3)
+
+    # Normalizing and resizing orig images
+    mean_val = np.mean(db[4][side_ind])
+    std_val = np.std(db[4][side_ind])
+    db[4][side_ind] -= mean_val
+    db[5][side_ind] -= mean_val
+    db[4][side_ind] /= std_val
+    db[5][side_ind] /= std_val
+
+    nb_train = db[4][side_ind].shape[0]
+    nb_val = db[5][side_ind].shape[0]
+    train_orig_imgs = np.zeros((nb_train, im_sz, im_sz, 1))
+    val_orig_imgs = np.zeros((nb_val, im_sz, im_sz, 1))
+    for i in range(db[4][side_ind].shape[0]):
+        train_orig_imgs[i,:,:,0] = imresize(db[4][side_ind][i].squeeze(), (im_sz, im_sz))
+    for i in range(db[5][side_ind].shape[0]):
+        val_orig_imgs[i,:,:,0] = imresize(db[5][side_ind][i].squeeze(), (im_sz, im_sz))
+
+
+    # Normalizing and resizing score maps
+    mean_val = np.mean(db[0][side_ind])
+    std_val = np.std(db[0][side_ind])
+    db[0][side_ind] -= mean_val
+    db[2][side_ind] -= mean_val
+    db[0][side_ind] /= std_val
+    db[2][side_ind] /= std_val
+
     nb_train = db[0][side_ind].shape[0]
     nb_val = db[2][side_ind].shape[0]
     train_imgs = np.zeros((nb_train, im_sz, im_sz, 1))
@@ -190,18 +217,16 @@ def train_model(side):
         train_imgs[i,:,:,0] = imresize(db[0][side_ind][i].squeeze(), (im_sz, im_sz))
     for i in range(db[2][side_ind].shape[0]):
         val_imgs[i,:,:,0] = imresize(db[2][side_ind][i].squeeze(), (im_sz, im_sz))
-    mean_val = 0.5 #np.mean(db[0][side_ind])
-    std_val = 1 #np.std(db[0][side_ind])
-    db[0][side_ind] -= mean_val
-    db[2][side_ind] -= mean_val
-    db[0][side_ind] /= std_val
-    db[2][side_ind] /= std_val
 
+    train_imgs = np.concatenate((train_imgs, train_orig_imgs), 3)
+    val_imgs = np.concatenate((val_imgs, val_orig_imgs), 3)
+    # Preparing model
     nb_epochs = 100
     batch_size = 200
     model = build_model(nb_epochs)
     # model = build_model_vgg16_based(nb_epochs)
-    model_name = 'global_scratch' + '_' + side
+    # model_name = 'global_scratch' + '_' + side
+    model_name = 'global_scratch_2ch' + '_' + side
     # model_name = 'global_vgg16'
     model.summary()
     model_file_name = 'ptx_model_' + model_name + '.hdf5'
@@ -211,7 +236,9 @@ def train_model(side):
     reduce_lr_on_plateu = ReduceLROnPlateau(monitor='val_loss', mode='min', patience=5, factor=0.3, verbose=1)
     plot_curves_callback = PlotLearningCurves()
     callbacks = [model_checkpoint, early_stopping, reduce_lr_on_plateu, plot_curves_callback]
-    print('Start fitting...')
+
+
+    # Fitting the model
     model.fit(train_imgs, to_categorical(db[1][side_ind], 2), batch_size=batch_size, epochs=nb_epochs,
               validation_data=(val_imgs, to_categorical(db[3][side_ind], 2)),
               verbose=1, shuffle=True,
@@ -228,7 +255,9 @@ if __name__ == '__main__':
         load_from_h5(os.path.join(training_path, 'train_scores_maps_arr.h5')),
         load_from_h5(os.path.join(training_path, 'train_global_label_arr.h5')).astype(np.uint8),
         load_from_h5(os.path.join(training_path, 'val_scores_maps_arr.h5')),
-        load_from_h5(os.path.join(training_path, 'val_global_label_arr.h5')).astype(np.uint8)
+        load_from_h5(os.path.join(training_path, 'val_global_label_arr.h5')).astype(np.uint8),
+        load_from_h5(os.path.join(training_path, 'train_orig_images_arr.h5')),
+        load_from_h5(os.path.join(training_path, 'val_orig_images_arr.h5'))
     ]
 
     train_model('left')
