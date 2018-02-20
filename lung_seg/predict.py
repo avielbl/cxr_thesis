@@ -17,6 +17,8 @@ def predict(img, model=None, verbose=0):
     :return: dict of 2 binary masks with fields: 'r_lung_mask', 'l_lung_mask'
     """
     if model is None:
+        import keras.backend as K
+        K.set_image_data_format('channels_first')
         from aid_funcs.keraswrapper import load_model
         model = load_model(seg_model_path, custom_objects='dice_coef_loss')
     if isinstance(img, str):

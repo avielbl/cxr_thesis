@@ -114,42 +114,42 @@ def predict_all_masks():
     plt.title('ROC curve (area = %0.2f, opt thresh = %0.2f)' % (100 * roc_auc, opt_thresh))
     plt.savefig(os.path.join(results_folder_path, 'roc analysis.png'))
 
-    # #  post-processing
-    # for i in range(n):
-    #     start_time = time.time()
-    #     scores = np.squeeze(scores_arr[i])
-    #     predicted_mask = np.zeros_like(scores)
-    #     predicted_mask[scores >= 0.11] = 1
-    #     label_im, nb_labels = ndimage.label(predicted_mask)
-    #     # remove small objects
-    #     if nb_labels > 2:
-    #         areas = ndimage.sum(predicted_mask, label_im, range(nb_labels + 1))
-    #         sorted_areas = np.sort(areas)
-    #         smallest_lung_ares = sorted_areas[-2]
-    #         mask_size = areas < smallest_lung_ares
-    #         remove_pixel = mask_size[label_im]
-    #         label_im[remove_pixel] = 0
-    #         lungs_only_mask = np.zeros_like(label_im)
-    #         lungs_only_mask[label_im > 0] = 1
-    #     else:
-    #         lungs_only_mask = predicted_mask
-    #     # closing gaps along lungs contour and fill holes
-    #     pp_lungs_mask = np.zeros_like(label_im, bool)
-    #     labels = np.unique(label_im)
-    #     labels = labels[1:]
-    #     for lung in labels:
-    #         close_size = 30
-    #         curr_lung = np.zeros_like(label_im, bool)
-    #         curr_lung[label_im == lung] = True
-    #         se = morphology.disk(close_size)
-    #         pad_width = ((close_size, close_size), (close_size, close_size))
-    #         padded_mask = np.pad(curr_lung, pad_width, mode='constant')
-    #         curr_lung = morphology.binary_closing(padded_mask, se)
-    #         curr_lung = curr_lung[close_size:-close_size, close_size:-close_size]
-    #         curr_lung = morphology.remove_small_holes(curr_lung, im_size ** 2 / 3)
-    #         pp_lungs_mask[curr_lung] = True
-    #     ptx_masks_arr[i] = pp_lungs_mask.astype('uint16')
-    #     print('completed post-process of %i/%i in %.3f seconds' % (i + 1, n, time.time() - start_time))
+    #  post-processing
+    for i in range(n):
+        start_time = time.time()
+        scores = np.squeeze(scores_arr[i])
+        predicted_mask = np.zeros_like(scores)
+        predicted_mask[scores >= 0.11] = 1
+        label_im, nb_labels = ndimage.label(predicted_mask)
+        # remove small objects
+        if nb_labels > 2:
+            areas = ndimage.sum(predicted_mask, label_im, range(nb_labels + 1))
+            sorted_areas = np.sort(areas)
+            smallest_lung_ares = sorted_areas[-2]
+            mask_size = areas < smallest_lung_ares
+            remove_pixel = mask_size[label_im]
+            label_im[remove_pixel] = 0
+            lungs_only_mask = np.zeros_like(label_im)
+            lungs_only_mask[label_im > 0] = 1
+        else:
+            lungs_only_mask = predicted_mask
+        # closing gaps along lungs contour and fill holes
+        pp_lungs_mask = np.zeros_like(label_im, bool)
+        labels = np.unique(label_im)
+        labels = labels[1:]
+        for lung in labels:
+            close_size = 30
+            curr_lung = np.zeros_like(label_im, bool)
+            curr_lung[label_im == lung] = True
+            se = morphology.disk(close_size)
+            pad_width = ((close_size, close_size), (close_size, close_size))
+            padded_mask = np.pad(curr_lung, pad_width, mode='constant')
+            curr_lung = morphology.binary_closing(padded_mask, se)
+            curr_lung = curr_lung[close_size:-close_size, close_size:-close_size]
+            curr_lung = morphology.remove_small_holes(curr_lung, im_size ** 2 / 3)
+            pp_lungs_mask[curr_lung] = True
+        ptx_masks_arr[i] = pp_lungs_mask.astype('uint16')
+        print('completed post-process of %i/%i in %.3f seconds' % (i + 1, n, time.time() - start_time))
 
     # performance analysis
     sens = np.ndarray(n)

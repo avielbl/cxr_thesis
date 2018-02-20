@@ -1,208 +1,125 @@
-import numpy as np
-import matplotlib.pyplot as plt
-import CXRLoadNPrep as clp
-from aid_funcs import image
 import os
-import cv2
-import keras.models
+import numpy as np
+from scipy.misc import imread
 import pickle
-import time
-# from drawnow import drawnow
-from sklearn.metrics import roc_curve, auc
-from scipy import ndimage
-from skimage import morphology
+from batch_segment import batch_segment
+from keraswrapper import load_model, weighted_pixelwise_crossentropy, dice_coef
 
-testing_path = 'C:\\Projects\\Algorithm_Dev\\CXR\\DATA\\Testing_Data\\all-dicom'
-lung_seg_path = 'C:\Projects\Algorithm_Dev\CXR\DATA\Testing_Data\segmentation_maps'
-im_size = 512
+np.random.seed(1)
+from aid_funcs.misc import zip_save
+from aid_funcs import CXRLoadNPrep as clp
+from utils import *
 
-
-def load_lungs_maps():
-    seg_map_dir = os.listdir(lung_seg_path)
-    n = len(seg_map_dir)
-    seg_map_arr = np.ndarray((n, 1, im_size, im_size), dtype='uint16')
-    im_count = 0
-    print("-" * 30)
-    for image_name in seg_map_dir:
-        seg_map = cv2.imread(os.path.join(lung_seg_path, image_name), cv2.IMREAD_GRAYSCALE)
-        seg_map = np.uint8(image.im_rescale(seg_map))
-        seg_map = image.resize_w_aspect(seg_map, im_size)
-        seg_map = np.uint8(seg_map)
-        seg_map_arr[im_count] = seg_map
-        im_count += 1
-        print("Loaded lungs map number %i" % im_count)
-    return seg_map_arr
+test_path = r'C:\projects\CXR_thesis\data_repo\TEST'
 
 
-def load_testing_images():
-    pre_process_params_path = "C:\\Projects\\Algorithm_Dev\\CXR\\new_ptx_classifier\\pre_process_params.pickle"
-    with open(pre_process_params_path, 'rb') as f:
-        mean_val, std_val = pickle.load(f)
-    images_dir = os.listdir(testing_path)
-    n = len(images_dir)
-    images_arr = np.ndarray((n, 1, 1, im_size, im_size), dtype='float32')
-    lung_seg_map_arr = load_lungs_maps()
-    im_count = 0
-    print("-" * 30)
-    for image_name in images_dir:
-        img = clp.load_dicom(os.path.join(testing_path, image_name))
-        img = image.im_rescale(img, 0, 2 ** 16)
-        img = image.resize_w_aspect(img, im_size)
-        lung_map = lung_seg_map_arr[im_count]
-        lung_map = lung_map.squeeze()
-        img[lung_map == 0] = np.nan
-        images_arr[im_count] = img
-        im_count += 1
+def load_all_images():
+    right_path = os.path.join(test_path, 'pos_cases', 'right')
+    left_path = os.path.join(test_path, 'pos_cases', 'left')
+    neg_path = os.path.join(test_path, 'neg_cases')
+    right_files = [os.path.join(right_path, file) for file in os.listdir(right_path)]
+    left_files = [os.path.join(left_path, file) for file in os.listdir(left_path)]
+    neg_files = [os.path.join(neg_path, file) for file in os.listdir(neg_path)]
+    nb_right = len(right_files)
+    nb_left = len(left_files)
+    nb_neg = len(neg_files)
+    nb_test = nb_right + nb_left + nb_neg
+    right_labels = np.zeros((nb_test,), dtype=np.uint8)
+    left_labels = np.zeros((nb_test,), dtype=np.uint8)
+    right_labels[:nb_right] = 1
+    left_labels[nb_right:nb_right+nb_left] = 1
+    imgs_path_lst = right_files + left_files + neg_files
+    img_names = []
+    images = []
+    for im_count, curr_img_path in enumerate(imgs_path_lst):
+        img_name = os.path.split(curr_img_path)[1][:-4]
+        img = clp.load_dicom(curr_img_path)
+        img = image.square_image(img)
+        img = image.imresize(img, (1024, 1024))
+        img_names.append(img_name)
+        images.append(img)
         print("Loaded image number %i" % im_count)
-    images_arr -= mean_val
-    images_arr /= std_val
-    images_arr[np.isnan(images_arr)] = mean_val / std_val
-    return images_arr
+
+    return right_labels, left_labels, img_names, images
 
 
-def load_test_ptx_maps():
-    ptx_maps_path = "C:\\Projects\\Algorithm_Dev\\CXR\\DATA\\Testing_Data\\ptx_maps"
-    ptx_map_dir = os.listdir(ptx_maps_path)
-    n = len(ptx_map_dir)
-    ptx_map_arr = np.ndarray((n, im_size, im_size), dtype='uint16')
-    im_count = 0
-    print("-" * 30)
-    for image_name in ptx_map_dir:
-        ptx_map = cv2.imread(os.path.join(ptx_maps_path, image_name), cv2.IMREAD_GRAYSCALE)
-        ptx_map = np.uint8(image.im_rescale(ptx_map))
-        ptx_map = image.resize_w_aspect(ptx_map, im_size)
-        ptx_map = np.uint8(ptx_map)
-        ptx_map_arr[im_count] = ptx_map
-        im_count += 1
-        print("Loaded segmentation image number %i" % im_count)
-    return ptx_map_arr
+def lung_seg_all():
+    lung_seg_path = os.path.join(test_path, 'lung_seg')
+    right_path = os.path.join(test_path, 'pos_cases', 'right')
+    left_path = os.path.join(test_path, 'pos_cases', 'left')
+    neg_path = os.path.join(test_path, 'neg_cases')
+    batch_segment(right_path, lung_seg_path)
+    batch_segment(left_path, lung_seg_path)
+    batch_segment(neg_path, lung_seg_path)
 
 
-def predict_all_masks():
-    results_folder_path = 'C:\Projects\Algorithm_Dev\CXR\\new_ptx_classifier'
-    model = keras.models.load_model("C:\Projects\Algorithm_Dev\CXR\\new_ptx_classifier\ptx_net_080117.hdf5")
-    images_arr = load_testing_images()
-    gt_ptx_maps = load_test_ptx_maps()
-    n = len(images_arr)
-    ptx_masks_arr = np.ndarray((n, im_size, im_size), dtype='uint16')
-    scores_arr = np.ndarray((n, im_size, im_size))
+def load_lung_masks(img_names):
+    nb_images = len(img_names)
+    lung_masks = np.zeros((nb_images, im_size, im_size), dtype=np.uint8)
+    lung_seg_path = os.path.join(test_path, 'lung_seg')
+    for i, name in enumerate(img_names):
+        lung_path = os.path.join(lung_seg_path, name + '.png')
+        if os.path.isfile(lung_path):
+            # Loading lung mask
+            curr_mask = imread(lung_path, mode='L')
+            curr_mask = image.imresize(curr_mask, (im_size, im_size))
+            lung_masks[i] = curr_mask
+    lung_masks[lung_masks > 1] = 1
+    return lung_masks
 
-    # actual prediction
-    for i in range(n):
-        start_time = time.time()
-        img = images_arr[i]
-        scores = model.predict(img, verbose=0)
-        scores = np.squeeze(scores)
-        scores_arr[i] = scores
-        print('predicted %i/%i in %f.3 seconds' % (i + 1, n, time.time() - start_time))
 
-    # calculating ROC per pixel
-    fpr, tpr, thresh = roc_curve(gt_ptx_maps.flatten(), scores_arr.flatten())
-    roc_auc = auc(fpr, tpr)
-    dist_to_opt = np.sqrt(fpr ** 2 + (1 - tpr) ** 2)
-    opt_ind = np.argmin(dist_to_opt)
-    opt_thresh = thresh[opt_ind]
+def preprocess_images(images, lung_masks):
+    nb_images = len(images)
+    images = np.zeros((nb_images, im_size, im_size))
+    lung_masks_out =np.zeros((nb_images, im_size, im_size), dtype=np.uint8)
+    for i in range(nb_images):
+        bb = get_lung_bb(lung_masks[i])
+        bb = np.clip(bb, 0, images[i].shape[0])
+        img = images[i]
+        img = img[bb[0]:bb[2], bb[1]:bb[3]]
+        img = image.imresize(img.astype(np.float32), (im_size, im_size))
+        lung_mask = lung_masks[i][bb[0]:bb[2], bb[1]:bb[3]]
+        lung_mask = image.imresize(lung_mask, (im_size, im_size))
 
-    # plotting the roc
-    plt.figure(1)
-    plt.plot(fpr, tpr, label='ROC')
-    plt.plot(fpr, thresh, label='Threshold')
-    plt.plot(fpr[opt_ind], tpr[opt_ind], 'ro', label='Optimal thresh')
-    plt.minorticks_on()
-    plt.grid(b=True, which='both')
-    plt.legend(loc='upper right')
-    plt.title('ROC curve (area = %0.2f, opt thresh = %0.2f)' % (100 * roc_auc, opt_thresh))
-    plt.savefig(os.path.join(results_folder_path, 'roc analysis.png'))
+        img = normalize_img(img)
+        images[i] = img
+        lung_masks_out[i] = lung_mask
 
-    # #  post-processing
-    # for i in range(n):
-    #     start_time = time.time()
-    #     scores = np.squeeze(scores_arr[i])
-    #     predicted_mask = np.zeros_like(scores)
-    #     predicted_mask[scores >= 0.11] = 1
-    #     label_im, nb_labels = ndimage.label(predicted_mask)
-    #     # remove small objects
-    #     if nb_labels > 2:
-    #         areas = ndimage.sum(predicted_mask, label_im, range(nb_labels + 1))
-    #         sorted_areas = np.sort(areas)
-    #         smallest_lung_ares = sorted_areas[-2]
-    #         mask_size = areas < smallest_lung_ares
-    #         remove_pixel = mask_size[label_im]
-    #         label_im[remove_pixel] = 0
-    #         lungs_only_mask = np.zeros_like(label_im)
-    #         lungs_only_mask[label_im > 0] = 1
-    #     else:
-    #         lungs_only_mask = predicted_mask
-    #     # closing gaps along lungs contour and fill holes
-    #     pp_lungs_mask = np.zeros_like(label_im, bool)
-    #     labels = np.unique(label_im)
-    #     labels = labels[1:]
-    #     for lung in labels:
-    #         close_size = 30
-    #         curr_lung = np.zeros_like(label_im, bool)
-    #         curr_lung[label_im == lung] = True
-    #         se = morphology.disk(close_size)
-    #         pad_width = ((close_size, close_size), (close_size, close_size))
-    #         padded_mask = np.pad(curr_lung, pad_width, mode='constant')
-    #         curr_lung = morphology.binary_closing(padded_mask, se)
-    #         curr_lung = curr_lung[close_size:-close_size, close_size:-close_size]
-    #         curr_lung = morphology.remove_small_holes(curr_lung, im_size ** 2 / 3)
-    #         pp_lungs_mask[curr_lung] = True
-    #     ptx_masks_arr[i] = pp_lungs_mask.astype('uint16')
-    #     print('completed post-process of %i/%i in %.3f seconds' % (i + 1, n, time.time() - start_time))
 
-    # performance analysis
-    sens = np.ndarray(n)
-    sens.fill(np.nan)
-    spec = np.ndarray(n)
-    spec.fill(np.nan)
-    acc = np.ndarray(n)
-    acc.fill(np.nan)
-    omega = np.ndarray(n)
-    omega.fill(np.nan)
-    dice = np.ndarray(n)
-    dice.fill(np.nan)
+def get_ptx_scores(imgs_arr):
+    '''
+    '''
+    from predict_ptx import fcn_model_path
+    with open('class_weights_fcn_classifier.pkl', 'rb') as f:
+        class_weights = pickle.load(f)
+    custom_objects = {'loss': weighted_pixelwise_crossentropy(class_weights), 'dice_coef': dice_coef}
+    fcn_model = load_model(fcn_model_path, custom_objects=custom_objects)
 
-    for i in range(n):
-        gt_mask = np.squeeze(gt_ptx_maps[i])
-        gt_mask = image.resize_w_aspect(gt_mask, im_size)
-        gt_mask = gt_mask.astype('uint16')
-        curr_mask = np.squeeze(ptx_masks_arr[i])
-        tp = np.sum(gt_mask * curr_mask)
-        tn = np.sum((1 - gt_mask) * (1 - curr_mask))
-        fp = np.sum((1 - gt_mask) * curr_mask)
-        fn = np.sum(gt_mask * (1 - curr_mask))
-        sens[i] = 100 * tp / (tp + fn)
-        spec[i] = 100 * tn / (tn + fp)
-        acc[i] = 100 * (tp + tn) / (tp + tn + fp + fn)
-        omega[i] = tp / (fp + tp + fn)
-        dice[i] = 2 * tp / (2 * tp + fn + fp)
-        im_name = 'pred_seg%02u' % (i + 1)
-        img = np.squeeze(images_arr[i])
-        plt.figure(i)
-        image.show_image_with_overlay(img=img, overlay=256 * curr_mask, overlay2=256 * gt_mask,
-                                      title_str=im_name + ': blue=gt, red=pred')
-        results_folder_path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'test_results'))
-        path = os.path.join(results_folder_path, '%s.png' % im_name)
-        plt.savefig(path, bbox_inches='tight')
+    scores = fcn_model.predict(imgs_arr, batch_size=5, verbose=1)
+    scores = scores[:, :, :, 1]  # Taking only scores for ptx
+    return scores
 
-    results = {'mean_sens': np.nanmean(sens),
-               'std_sens': np.nanstd(sens),
-               'mean_spec': np.nanmean(spec),
-               'std_spec': np.nanstd(spec),
-               'mean_acc': np.nanmean(acc),
-               'std_acc': np.nanstd(acc),
-               'mean_omega': np.nanmean(omega),
-               'std_omega': np.nanstd(omega),
-               'mean_dice': np.nanmean(dice),
-               'std_dice': np.nanstd(dice)}
-    print('mean sensitivity: {} +- {}'.format(results['mean_sens'], results['std_sens']))
-    print('mean specificity: {} +- {}'.format(results['mean_spec'], results['std_spec']))
-    print('mean accuracy: {} +- {}'.format(results['mean_acc'], results['std_acc']))
-    print('mean omega: {} +- {}'.format(results['mean_omega'], results['std_omega']))
-    print('mean dice: {} +- {}'.format(results['mean_dice'], results['std_dice']))
-    return (results, ptx_masks_arr)
+def predict_all(score_maps):
+    pass
 
+
+def compute_auc(predictions, right_labels, left_labels):
+    '''
+    todo:
+    plot, show and save roc and results for right, left and total
+    '''
+    pass
+
+
+def main():
+    right_labels, left_labels, img_names, images = load_all_images()
+    lung_masks = load_lung_masks(img_names)
+    images = preprocess_images(images, lung_masks)
+    score_maps = get_ptx_scores(images)
+
+    predictions = predict_all(score_maps)
+    compute_auc(predictions, right_labels, left_labels)
 
 if __name__ == '__main__':
-    predict_all_masks()
+    # lung_seg_all()
+    main()

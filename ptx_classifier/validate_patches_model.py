@@ -1,3 +1,5 @@
+from keras.utils import plot_model
+
 from aid_funcs.misc import roc_plotter
 from aid_funcs.keraswrapper import load_model
 from misc import load_from_h5
@@ -7,7 +9,7 @@ val_data_labels = load_from_h5(os.path.join(training_path, 'val_labels.h5'))
 val_data_patches = load_from_h5(os.path.join(training_path, 'val_patches.h5'))
 
 model = load_model(model_path)
-
+plot_model(model, 'model_patches.png', show_shapes=True, show_layer_names=False)
 nb_val = val_data_labels.shape[0]
 scores = model.predict(val_data_patches, batch_size=1000, verbose=1)[:,1]
 

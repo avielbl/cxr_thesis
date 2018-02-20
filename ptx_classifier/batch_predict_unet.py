@@ -1,3 +1,5 @@
+from keras.utils import plot_model
+
 from aid_funcs.keraswrapper import load_model
 from misc import load_from_h5, roc_plotter
 from prep_data_for_unet import prep_set
@@ -8,6 +10,7 @@ from utils import *
 def analyze_performance(model=None, val_data = None, model_name='', custom_objects=None):
     if model is None:
         model = load_model('ptx_model_' + model_name + '.hdf5', custom_objects=custom_objects)
+        plot_model(model, 'model' + model_name + '.png', show_shapes=True, show_layer_names=False)
         # model = load_model('ptx_model_unet.hdf5', custom_objects='dice_coef_loss')
     if val_data is None:
         _, val_data_lst = process_and_augment_data()

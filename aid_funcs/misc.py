@@ -172,7 +172,7 @@ def load_from_h5(file_name):
 
     return data
 
-def roc_plotter(gt, scores, title):
+def roc_plotter(gt, scores, title, plot_thresh=False):
     fpr, tpr, thresh = roc_curve(gt, scores)
     roc_auc = auc(fpr, tpr)
     dist_to_opt = np.sqrt(fpr ** 2 + (1 - tpr) ** 2)
@@ -182,7 +182,8 @@ def roc_plotter(gt, scores, title):
     # plotting the roc
     fig = plt.figure(1)
     plt.plot(fpr, tpr, label='ROC')
-    plt.plot(fpr, thresh, label='Threshold')
+    if plot_thresh:
+        plt.plot(fpr, thresh, label='Threshold')
     plt.plot(fpr[opt_ind], tpr[opt_ind], 'ro', label='Optimal thresh')
     plt.minorticks_on()
     plt.grid(b=True, which='both')
@@ -194,4 +195,6 @@ def roc_plotter(gt, scores, title):
     plt.ylim([0.0, 1.05])
     plt.show()
     plt.savefig('roc analysis ' + title + '.png')
+    with open(title + '_roc.pkl', 'wb') as f:
+        pickle.dump((fpr, tpr, opt_ind), f)
     return fig

@@ -1,5 +1,6 @@
 import numpy as np
 from keras.losses import binary_crossentropy, categorical_crossentropy
+from keras.utils import plot_model
 
 np.random.seed(1)
 from collections import namedtuple
@@ -9,7 +10,7 @@ import tensorflow as tf
 from sklearn.metrics import roc_curve, auc
 from skimage import measure
 from scipy.misc import imread
-
+import pickle
 from aid_funcs import image
 from aid_funcs.misc import zip_save, save_to_h5, load_from_h5
 from aid_funcs.keraswrapper import get_unet, load_model, plot_first_layer, PlotLearningCurves, get_class_weights, \
@@ -209,12 +210,18 @@ db[2] = np.rollaxis(db[2], 1, 4)
 db[3] = np.rollaxis(db[3], 1, 4)
 
 class_weights = get_class_weights(db[1])
+with open('class_weights_fcn_classifier.pkl', 'wb') as f:
+    pickle.dump(class_weights, f)
 # class_weights = None
 
 # model_name = 'U-Net_DICE'
 model_name = 'U-Net_WCE'
 # model = train_model(db, model_name, class_weights)
 from batch_predict_unet import analyze_performance
+custom_objects = {'loss': weighted_pixelwise_crossentropy(class_weights), 'dice_coef':dice_coef}
+model = load_model('ptx_model_' + model_name + '.hdf5', custom_objects=custom_objects)
+plot_model(model)
+
 analyze_performance(model=None, val_data=(db[2], db[3]),
                     model_name=model_name,
-                    custom_objects={'loss': weighted_pixelwise_crossentropy(class_weights), 'dice_coef':dice_coef})
+                    custom_objects=custom_objects)

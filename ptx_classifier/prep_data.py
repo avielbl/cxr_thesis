@@ -4,8 +4,8 @@ import os
 import numpy as np
 
 def prep_set(root):
-    right_cases = getimages(['r_ptx'], ['PA', 'AP'])
-    left_cases = getimages(['l_ptx'], ['PA', 'AP'])
+    right_cases = getimages(['r_ptx'], ['PA', 'AP'], data_repo_path=root)
+    left_cases = getimages(['l_ptx'], ['PA', 'AP'], data_repo_path=root)
     pos_path = os.path.join(root, 'pos_cases')
     right_path = os.path.join(pos_path, 'right')
     left_path = os.path.join(pos_path, 'left')
@@ -15,7 +15,7 @@ def prep_set(root):
     for case in left_cases:
         copy2(case, left_path)
 
-    neg_cases = getimages(['r_ptx', 'l_ptx'], ['PA', 'AP'], getneg=True)
+    neg_cases = getimages(['r_ptx', 'l_ptx'], ['PA', 'AP'], getneg=True, data_repo_path=root)
     neg_path = os.path.join(root, 'neg_cases')
 
     neg_samples = np.random.choice(len(neg_cases), size=np.uint16(1.1*nb_pos), replace=False)

@@ -2,6 +2,7 @@ import numpy as np
 import os
 import cv2
 import pickle
+from scipy.misc import imread
 from collections import namedtuple
 from aid_funcs import image
 from scipy import ndimage
@@ -43,8 +44,14 @@ def load_image(im_path, pp_params_path=None):
     :return: image array in shape (1, 1, im_size, im_size) to be used for training/ predicting
     """
 
-    img = clp.load_dicom(im_path)
-    if isinstance(img, (np.ndarray, np.generic) ):
+    if im_path.endswith('dcm'):
+        img = clp.load_dicom(im_path)
+    elif im_path.endswith('png'):
+        img = imread(im_path)
+    else:
+        print('Unknown image format')
+        return None
+    if isinstance(img, (np.ndarray, np.generic)):
         img = image.im_rescale(img, 0, 2 ** 16)
         img = image.resize_w_aspect(img, im_size)
         if pp_params_path is not None:

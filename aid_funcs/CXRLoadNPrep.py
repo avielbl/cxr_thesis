@@ -2,7 +2,7 @@ import dicom
 import numpy as np
 from scipy import misc
 import matplotlib.pyplot as plt
-from . import image
+from aid_funcs import image
 
 
 def load_dicom(path):

@@ -5,12 +5,6 @@ import scipy.io as spio
 import numpy as np
 
 
-data_repo_path = r'C:\projects\CXR_thesis\data_repo\TRAINING'
-root = os.path.join(data_repo_path, 'clean')
-db_path = os.path.join(data_repo_path, 'db_description_cxr_train.csv')
-
-db_labels = csv_to_list_dict(db_path)
-patients_dir_lst = [name for name in os.listdir(root) if os.path.isdir(os.path.join(root, name))]
 
 findings_dict = {'healthy': 'Healthy',
                  'cardio': 'cardiomegaly',
@@ -28,11 +22,17 @@ findings_dict = {'healthy': 'Healthy',
                  'l_nodules': 'nodules left',
                  'edema': 'Pulmonary Edema'}
 
-def getimages(findings, proj='PA', getneg=False):
+def getimages(findings, proj='PA', getneg=False, data_repo_path=r'C:\projects\CXR_thesis\data_repo\TRAINING'):
     if not isinstance(findings, (list, tuple)):
         findings = [findings]
     if not isinstance(proj, (list, tuple)):
         proj = [proj]
+    root = os.path.join(data_repo_path, 'clean')
+    labels_csv_path = [file for file in os.listdir(data_repo_path) if 'db_description' in file and file.endswith('csv')]
+    db_path = os.path.join(data_repo_path, labels_csv_path[0])
+
+    db_labels = csv_to_list_dict(db_path)
+    patients_dir_lst = [name for name in os.listdir(root) if os.path.isdir(os.path.join(root, name))]
 
     out_list = []
     for finding in findings:
