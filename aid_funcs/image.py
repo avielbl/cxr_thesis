@@ -51,15 +51,21 @@ def imresize(img, newsz, interp=1):
         2: cv2.INTER_CUBIC
     }
     img = np.array(img)
+    orig_type = img.dtype
+    img = np.float32(img)
     # Treat newsz as scaling factor
     if not isinstance(newsz, (list, tuple)):
         if newsz <= 0:
             raise ValueError('resizing factor should be greater than 0')
-        return cv2.resize(img, (0,0), fx=newsz, fy=newsz, interpolation=interpkernel[interp])
+        out = cv2.resize(img, (0,0), fx=newsz, fy=newsz, interpolation=interpkernel[interp])
+        out = out.astype(orig_type)
+        return out
     # Treat newsz as tuple shape
     else:
         revSize = [newsz[1], newsz[0]]
-        return cv2.resize(img, tuple(revSize), interpolation=interpkernel[interp])
+        out = cv2.resize(img, tuple(revSize), interpolation=interpkernel[interp])
+        out = out.astype(orig_type)
+        return out
 
 
 def resize_w_aspect(img, im_size, padvalue=0):
