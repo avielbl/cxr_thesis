@@ -1,106 +1,12 @@
 import os
 import numpy as np
-from scipy.misc import imread
-import pickle
-from batch_segment import batch_segment
-from keraswrapper import load_model, weighted_pixelwise_crossentropy, dice_coef
-
 np.random.seed(1)
-from aid_funcs.misc import zip_save
-from aid_funcs import CXRLoadNPrep as clp
+from aid_funcs.misc import zip_save, roc_plotter
+from predict_ptx import batch_predict
 from utils import *
 
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 test_path = r'C:\projects\CXR_thesis\data_repo\TEST'
-
-
-def load_all_images():
-    right_path = os.path.join(test_path, 'pos_cases', 'right')
-    left_path = os.path.join(test_path, 'pos_cases', 'left')
-    neg_path = os.path.join(test_path, 'neg_cases')
-    right_files = [os.path.join(right_path, file) for file in os.listdir(right_path)]
-    left_files = [os.path.join(left_path, file) for file in os.listdir(left_path)]
-    neg_files = [os.path.join(neg_path, file) for file in os.listdir(neg_path)]
-    nb_right = len(right_files)
-    nb_left = len(left_files)
-    nb_neg = len(neg_files)
-    nb_test = nb_right + nb_left + nb_neg
-    right_labels = np.zeros((nb_test,), dtype=np.uint8)
-    left_labels = np.zeros((nb_test,), dtype=np.uint8)
-    right_labels[:nb_right] = 1
-    left_labels[nb_right:nb_right+nb_left] = 1
-    imgs_path_lst = right_files + left_files + neg_files
-    img_names = []
-    images = []
-    for im_count, curr_img_path in enumerate(imgs_path_lst):
-        img_name = os.path.split(curr_img_path)[1][:-4]
-        img = clp.load_dicom(curr_img_path)
-        img = image.square_image(img)
-        img = image.imresize(img, (1024, 1024))
-        img_names.append(img_name)
-        images.append(img)
-        print("Loaded image number %i" % im_count)
-
-    return right_labels, left_labels, img_names, images
-
-
-def lung_seg_all():
-    lung_seg_path = os.path.join(test_path, 'lung_seg')
-    right_path = os.path.join(test_path, 'pos_cases', 'right')
-    left_path = os.path.join(test_path, 'pos_cases', 'left')
-    neg_path = os.path.join(test_path, 'neg_cases')
-    batch_segment(right_path, lung_seg_path)
-    batch_segment(left_path, lung_seg_path)
-    batch_segment(neg_path, lung_seg_path)
-
-
-def load_lung_masks(img_names):
-    nb_images = len(img_names)
-    lung_masks = np.zeros((nb_images, im_size, im_size), dtype=np.uint8)
-    lung_seg_path = os.path.join(test_path, 'lung_seg')
-    for i, name in enumerate(img_names):
-        lung_path = os.path.join(lung_seg_path, name + '.png')
-        if os.path.isfile(lung_path):
-            # Loading lung mask
-            curr_mask = imread(lung_path, mode='L')
-            curr_mask = image.imresize(curr_mask, (im_size, im_size))
-            lung_masks[i] = curr_mask
-    lung_masks[lung_masks > 1] = 1
-    return lung_masks
-
-
-def preprocess_images(images, lung_masks):
-    nb_images = len(images)
-    images = np.zeros((nb_images, im_size, im_size))
-    lung_masks_out =np.zeros((nb_images, im_size, im_size), dtype=np.uint8)
-    for i in range(nb_images):
-        bb = get_lung_bb(lung_masks[i])
-        bb = np.clip(bb, 0, images[i].shape[0])
-        img = images[i]
-        img = img[bb[0]:bb[2], bb[1]:bb[3]]
-        img = image.imresize(img.astype(np.float32), (im_size, im_size))
-        lung_mask = lung_masks[i][bb[0]:bb[2], bb[1]:bb[3]]
-        lung_mask = image.imresize(lung_mask, (im_size, im_size))
-
-        img = normalize_img(img)
-        images[i] = img
-        lung_masks_out[i] = lung_mask
-
-
-def get_ptx_scores(imgs_arr):
-    '''
-    '''
-    from predict_ptx import fcn_model_path
-    with open('class_weights_fcn_classifier.pkl', 'rb') as f:
-        class_weights = pickle.load(f)
-    custom_objects = {'loss': weighted_pixelwise_crossentropy(class_weights), 'dice_coef': dice_coef}
-    fcn_model = load_model(fcn_model_path, custom_objects=custom_objects)
-
-    scores = fcn_model.predict(imgs_arr, batch_size=5, verbose=1)
-    scores = scores[:, :, :, 1]  # Taking only scores for ptx
-    return scores
-
-def predict_all(score_maps):
-    pass
 
 
 def compute_auc(predictions, right_labels, left_labels):
@@ -111,15 +17,54 @@ def compute_auc(predictions, right_labels, left_labels):
     pass
 
 
-def main():
-    right_labels, left_labels, img_names, images = load_all_images()
-    lung_masks = load_lung_masks(img_names)
-    images = preprocess_images(images, lung_masks)
-    score_maps = get_ptx_scores(images)
+def analyze_results():
+    right_res, left_res, neg_res = zip_load('test_res.h5')
+    right_labels, left_labels, neg_labels = zip_load('test_labels.h5')
+    nb_samples = len(right_labels) + len(left_labels) + len(neg_labels)
+    scores = np.zeros((nb_samples, 2))
+    combined_res = right_res + left_res + neg_res
+    combined_labels = np.concatenate((right_labels, left_labels, neg_labels))
+    for i, res in enumerate(combined_res):
+        scores[i, 0] = res[1].l_coverage
+        scores[i, 1] = res[1].r_coverage
 
-    predictions = predict_all(score_maps)
-    compute_auc(predictions, right_labels, left_labels)
+    left_auc = roc_plotter(combined_labels[:, 0], scores[:, 0], 'Left ROC', True)
+    right_auc = roc_plotter(combined_labels[:, 1], scores[:, 1], 'Right ROC', True)
+    total_auc = roc_plotter(np.concatenate((combined_labels[:, 0], combined_labels[:, 1])),
+                            np.concatenate((scores[:, 0], scores[:, 1])), 'Total ROC', True)
+    per_patient_auc = roc_plotter(combined_labels[:, 0] + combined_labels[:, 1],
+                                  np.max(scores, ), 'Per-patient ROC', True)
+    return
+
+
+
+def gen_labels(path, label=None):
+    imgs_lst = os.listdir(path)
+    nb_imgs = len(imgs_lst)
+    labels = np.zeros((nb_imgs, 2), dtype=np.uint8)
+    if label is None:
+        return labels
+    if label == 'left':
+        labels[:, 0] = 1
+    elif label == 'right':
+        labels[:, 1] = 1
+    return labels
+
+
+def main():
+    right_path = os.path.join(test_path, 'pos_cases', 'right')
+    right_labels = gen_labels(right_path, 'right')
+    left_path = os.path.join(test_path, 'pos_cases', 'left')
+    left_labels = gen_labels(right_path, 'left')
+    neg_path = os.path.join(test_path, 'neg_cases')
+    neg_labels = gen_labels(neg_path)
+
+    right_res = batch_predict(right_path, right_labels)
+    left_res = batch_predict(left_path, left_labels)
+    neg_res = batch_predict(neg_path, neg_labels)
+    zip_save((right_res, left_res, neg_res), 'test_res.h5')
+    zip_save((right_labels, left_labels, neg_labels), 'test_labels.h5')
 
 if __name__ == '__main__':
-    # lung_seg_all()
     main()
+    analyze_results()
