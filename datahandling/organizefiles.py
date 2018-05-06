@@ -1,5 +1,5 @@
 import os
-import dicom
+import pydicom as dicom
 import shutil
 import csv
 import matplotlib.pyplot as plt

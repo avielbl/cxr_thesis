@@ -1,4 +1,4 @@
-import dicom
+import pydicom as dicom
 import numpy as np
 from scipy import misc
 import matplotlib.pyplot as plt
