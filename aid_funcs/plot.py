@@ -1,3 +1,4 @@
+import cv2
 import numpy as np
 import matplotlib.pyplot as plt
 from tkinter import *
@@ -26,8 +27,16 @@ def set_curr_fig_size(sz_ratio):
     new_sz = np.round(sz_ratio * scr_sz)
     mngr.window.setGeometry(margins[0], margins[1], new_sz[0], new_sz[1])
 
+def to_rgb(im):
+    w, h = im.shape
+    ret = np.empty((w, h, 3), dtype=np.uint8)
+    ret[:, :, 0] = im
+    ret[:, :, 1] = ret[:, :, 2] = ret[:, :, 0]
+    return ret
 
-def show_image_with_overlay(img, overlay, overlay2=np.array([]), title_str='', alpha=0.3):
+
+
+def show_image_with_overlay(img, overlay, overlay2=None, title_str='', alpha=0.3, plot_output=True):
     """Function for presenting image with up to 2 partially transprent binary masks as overlays
 
     :param img: base image array (currently grayscale only supported)
@@ -38,23 +47,33 @@ def show_image_with_overlay(img, overlay, overlay2=np.array([]), title_str='', a
     :return: none. plotting to new figure if none is open or to last active figure if exist
     """
 
-    sz = np.shape(img)
     img = im_rescale(img, 0, 255)
-    if np.sum(overlay) > 0:
-        overlay = im_rescale(overlay, 0, 255)
-    out_img = np.ndarray((sz[0], sz[1], 3))
-    out_img[:, :, 0] = (1 - alpha) * img + alpha * overlay
-    out_img[:, :, 1] = (1 - alpha) * img
-    if overlay2.size == 0:
-        out_img[:, :, 2] = (1 - alpha) * img
+    out_img_rgb = to_rgb(img)
+
+    if overlay is None:
+        overlay = np.zeros(img.shape)
+    overlay = overlay.astype(bool)
+    overlay_color = [255, 0, 0]
+    overlay_rgb = out_img_rgb.copy()
+    overlay_rgb[overlay] = overlay_color
+    cv2.addWeighted(out_img_rgb, alpha, overlay_rgb, 1-alpha, 0, out_img_rgb)
+
+    if overlay2 is None:
+        overlay2 = np.zeros(img.shape)
+    overlay2 = overlay2.astype(bool)
+    overlay2_color = [0, 255, 0]
+    overlay2_rgb = out_img_rgb.copy()
+    overlay2_rgb[overlay2] = overlay2_color
+    cv2.addWeighted(out_img_rgb, alpha, overlay2_rgb, 1-alpha, 0, out_img_rgb)
+
+
+    if plot_output:
+        out = plt.imshow(out_img_rgb)
+        plt.title(title_str)
+        return out
     else:
-        if np.sum(overlay2) > 0:
-            overlay2 = im_rescale(overlay2, 0, 255)
-        out_img[:, :, 2] = (1 - alpha) * img + (alpha * overlay2)
-    out_img = np.uint8(out_img)
-    out = plt.imshow(out_img)
-    plt.title(title_str)
-    return out
+        return out_img_rgb
+
 
 
 
