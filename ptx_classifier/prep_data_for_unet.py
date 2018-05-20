@@ -2,7 +2,7 @@ import numpy as np
 import os
 from aid_funcs import image, misc
 
-from utils import process_and_augment_data, training_path, im_size
+from ptx_classifier.utils import process_and_augment_data, training_path, im_size
 
 
 def get_lung_masks(data_lst):
