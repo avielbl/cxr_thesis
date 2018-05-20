@@ -126,3 +126,16 @@ def safe_binary_morphology(mask, sesize=5, mode='close'):
 
     out = morphed_mask[sesize:-sesize, sesize:-sesize]
     return out
+
+
+def get_contour_from_mask(mask):
+    max_val = np.max(mask)
+    mask[mask>0] = 1
+    eroded = safe_binary_morphology(mask, 2, 'erode')
+    out = mask - eroded
+    out[out<0] = 0
+    out[out>0] = max_val
+    # idx = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)[1][0]
+    # out = np.zeros_like(mask)
+    # out[idx[:, 0, 0], idx[:, 0, 1]] = 1
+    return out

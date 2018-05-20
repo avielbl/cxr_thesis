@@ -1,1 +1,1 @@
-training_path = r'C:\Users\aviel\OneDrive - Imedis Medical\data_repo\Training'
+training_path = r'c:\projects\CXR_thesis\data_repo\Training'

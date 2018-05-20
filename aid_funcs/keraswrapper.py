@@ -1,5 +1,6 @@
 import numpy as np
 from numpy.random import seed as npseed
+
 npseed(1)
 from keras.models import Model
 from keras.models import load_model as keras_load_model
@@ -20,14 +21,25 @@ from collections import OrderedDict, Counter
 from matplotlib.legend_handler import HandlerLine2D
 import time
 import tensorflow as tf
-#K.set_image_dim_ordering('th')  # Theano dimension ordering in this code
 
 
-def load_model(model_path, custom_objects = None):
+# K.set_image_dim_ordering('th')  # Theano dimension ordering in this code
+
+def get_session():
+    gpu_options = tf.GPUOptions(allow_growth=True)
+    return tf.Session(config=tf.ConfigProto(gpu_options=gpu_options))
+
+
+import keras.backend.tensorflow_backend as ktf
+
+ktf.set_session(get_session())
+
+
+def load_model(model_path, custom_objects=None):
     if custom_objects is None:
         return keras_load_model(model_path)
     elif custom_objects == 'dice_coef_loss':
-        return keras_load_model(model_path, custom_objects={'dice_coef_loss':dice_coef_loss, 'dice_coef':dice_coef})
+        return keras_load_model(model_path, custom_objects={'dice_coef_loss': dice_coef_loss, 'dice_coef': dice_coef})
     else:
         return keras_load_model(model_path, custom_objects=custom_objects)
 
@@ -43,8 +55,8 @@ def dice_coef(y_true, y_pred):
     '''
     smooth = 1.
     if y_pred.shape.dims[3] > 1:
-        y_pred = y_pred[:,:,:,1]
-        y_true = y_true[:,:,:,1]
+        y_pred = y_pred[:, :, :, 1]
+        y_true = y_true[:, :, :, 1]
     y_true = K.flatten(y_true)
     y_pred = K.flatten(y_pred)
     intersection = K.sum(y_true * y_pred)
@@ -68,6 +80,7 @@ def weighted_pixelwise_crossentropy(class_weights):
         epsilon = tf.convert_to_tensor(1e-8, y_pred.dtype.base_dtype)
         y_pred = tf.clip_by_value(y_pred, epsilon, 1. - epsilon)
         return - tf.reduce_sum(tf.multiply(y_true * tf.log(y_pred), weights))
+
     return loss
 
 
@@ -89,6 +102,7 @@ def get_unet(im_size, filters=64, filter_size=3, dropout_val=0.5,
     :param kwargs: parameters that will be transferred to SGD optimizier
     :return: compiled keras model object
     '''
+
     def contraction_block(in_layer, filters_mult=1):
         '''
         Internal function implementing a single contracting block of layers.
@@ -99,15 +113,13 @@ def get_unet(im_size, filters=64, filter_size=3, dropout_val=0.5,
         :return: tuple of (conv_layer, pool_layer)
         '''
         conv_layer = Conv2D(filters * filters_mult,
-                            (filter_size, filter_size),
-                            kernel_initializer='he_normal',
-                            padding='same')(in_layer)
-        conv_layer = LeakyReLU(lrelu_alpha)(conv_layer)
+                (filter_size, filter_size),
+                kernel_initializer='he_normal',
+                padding='same', activation='relu')(in_layer)
         conv_layer = Conv2D(filters * filters_mult,
-                            (filter_size, filter_size),
-                            kernel_initializer='he_normal',
-                            padding='same')(conv_layer)
-        conv_layer = LeakyReLU(lrelu_alpha)(conv_layer)
+                (filter_size, filter_size),
+                kernel_initializer='he_normal',
+                padding='same', activation='relu')(conv_layer)
         pool_layer = MaxPooling2D(pool_size=(2, 2))(conv_layer)
         return conv_layer, pool_layer
 
@@ -123,18 +135,16 @@ def get_unet(im_size, filters=64, filter_size=3, dropout_val=0.5,
         '''
         up_layer = concatenate([UpSampling2D(size=(2, 2))(low_res_layer), high_res_layer], axis=3)
         conv_layer = Conv2D(filters * filters_mult,
-                            (filter_size, filter_size),
-                            kernel_initializer='he_normal',
-                            padding='same')(up_layer)
-        conv_layer = LeakyReLU(lrelu_alpha)(conv_layer)
+                (filter_size, filter_size),
+                kernel_initializer='he_normal',
+                padding='same', activation='relu')(up_layer)
         conv_layer = Conv2D(filters * filters_mult,
-                            (filter_size, filter_size),
-                            kernel_initializer='he_normal',
-                            padding='same')(conv_layer)
-        conv_layer = LeakyReLU(lrelu_alpha)(conv_layer)
+                (filter_size, filter_size),
+                kernel_initializer='he_normal',
+                padding='same', activation='relu')(conv_layer)
         return conv_layer
 
-    inputs = Input((im_size, im_size, 1))
+    inputs = Input((None, None, 1))
     conv1, pool1 = contraction_block(inputs, 1)
     conv2, pool2 = contraction_block(pool1, 2)
     conv3, pool3 = contraction_block(pool2, 4)
@@ -148,7 +158,7 @@ def get_unet(im_size, filters=64, filter_size=3, dropout_val=0.5,
 
     conv8 = Dropout(dropout_val)(conv7)
 
-    conv9 = Conv2D(nb_classes, (1, 1), activation='softmax', kernel_initializer='he_normal')(conv8)
+    conv9 = Conv2D(nb_classes, (1, 1), activation='sigmoid', kernel_initializer='he_normal')(conv8)
 
     model = Model(inputs=inputs, outputs=conv9)
     if optim_fun == None:
@@ -172,8 +182,6 @@ def print_model_to_file(model, file_name=None):
     plot_model(model, to_file=file_name, show_shapes=True)
 
 
-
-
 def make_mosaic(imgs, nrows, ncols, border=1):
     """
     Given a set of images with all the same shape, makes a
@@ -185,7 +193,7 @@ def make_mosaic(imgs, nrows, ncols, border=1):
 
     mosaic = ma.masked_all((nrows * imshape[0] + (nrows - 1) * border,
                             ncols * imshape[1] + (ncols - 1) * border),
-                           dtype=np.float32)
+            dtype=np.float32)
 
     paddedh = imshape[0] + border
     paddedw = imshape[1] + border
@@ -212,7 +220,6 @@ def nice_imshow(ax, data, vmin=None, vmax=None, cmap=None):
     plt.colorbar(im, cax=cax)
 
 
-
 def plot_conv_weights(model, layer):
     # Visualize weights
     # W = model.layers[layer].W.get_value(borrow=True)
@@ -227,6 +234,7 @@ def plot_conv_weights(model, layer):
     plt.title('conv weights')
     s = int(np.sqrt(W.shape[0]) + 1)
     nice_imshow(plt.gca(), make_mosaic(W, s, s), cmap=cm.binary)
+
 
 def plot_first_layer(model):
     layer = model.layers[0]
@@ -244,7 +252,7 @@ def plot_first_layer(model):
     cur_row = 0
     cur_col = 0
     for i in range(nb_filters):
-        out_img[cur_row:cur_row+filt_sz, cur_col:cur_col+filt_sz] = np.squeeze(filters[:,:,:,i])
+        out_img[cur_row:cur_row + filt_sz, cur_col:cur_col + filt_sz] = np.squeeze(filters[:, :, :, i])
         cur_col += filt_sz + pad_sz
         if cur_col > cols:
             cur_col = 0
@@ -255,6 +263,7 @@ def plot_first_layer(model):
     ax.axes.get_xaxis().set_visible(False)
     ax.axes.get_yaxis().set_visible(False)
     fig.colorbar(cax)
+
 
 def optimize_ticks(ax):
     xmax = ax.dataLim.max[0]
@@ -268,6 +277,7 @@ def optimize_ticks(ax):
     ax.yaxis.set_ticks(yticks)
     return ax
 
+
 class PlotLearningCurves(keras.callbacks.Callback):
     '''
 
@@ -280,8 +290,9 @@ class PlotLearningCurves(keras.callbacks.Callback):
     model.fit(X, Y, nb_epoch=10, batch_size=10, callbacks=[plot_curves_callback])
 
     '''
+
     def __init__(self, metric_name='acc', model_name=''):
-        self.metric_name=metric_name
+        self.metric_name = metric_name
         self.model_name = model_name
         self.metric = []
         self.val_metric = []
@@ -298,7 +309,7 @@ class PlotLearningCurves(keras.callbacks.Callback):
         # left-sided graph for the metric
         from plot import set_curr_fig_size
         fig, (ax1, ax2) = plt.subplots(ncols=2)
-        set_curr_fig_size(0.8)
+        # set_curr_fig_size(0.8)
         str_title = self.metric_name.replace("_", " ")
         str_title = str_title.title()
         ax1.set_title('Model ' + str_title)
@@ -322,7 +333,7 @@ class PlotLearningCurves(keras.callbacks.Callback):
         self.loss.append(logs.get('loss'))
         self.val_loss.append(logs.get('val_loss'))
 
-        self.xdata.append(epoch+1)
+        self.xdata.append(epoch + 1)
         fig, ax1, ax2 = self.fig, self.ax1, self.ax2
 
         acc_line_train, = ax1.plot(self.xdata, self.metric, '-bo', label='Train')
@@ -338,6 +349,7 @@ class PlotLearningCurves(keras.callbacks.Callback):
         fig.canvas.draw()
         plt.pause(1e-6)
         fig.savefig(self.file_name)
+
 
 def get_class_weights(y, smooth_factor=0.1):
     """
@@ -357,4 +369,4 @@ def get_class_weights(y, smooth_factor=0.1):
     majority = max(counter.values())
 
     # return {cls: float(majority / count) for cls, count in counter.items()}
-    return [float(majority / counter[0]),  float(majority / counter[1])]
+    return [float(majority / counter[0]), float(majority / counter[1])]

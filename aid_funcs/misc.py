@@ -5,7 +5,7 @@ import numpy as np
 import io
 import csv
 import os
-import dicom
+import pydicom as dicom
 import scipy.io as spio
 import matplotlib.pyplot as plt
 from sklearn.metrics import roc_curve, auc

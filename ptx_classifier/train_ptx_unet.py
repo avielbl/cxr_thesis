@@ -17,7 +17,7 @@ from aid_funcs.keraswrapper import get_unet, load_model, plot_first_layer, PlotL
     weighted_pixelwise_crossentropy, dice_coef_loss, dice_coef
 from lung_seg.utilfuncs import seperate_lungs
 from aid_funcs import CXRLoadNPrep as clp
-from utils import *
+from ptx_classifier.utils import *
 
 Case = namedtuple('Case', ['left', 'right'])
 Data = namedtuple('Case', ['img', 'lung_mask', 'ptx_mask'])
@@ -216,7 +216,7 @@ with open('class_weights_fcn_classifier.pkl', 'wb') as f:
 
 # model_name = 'U-Net_DICE'
 model_name = 'U-Net_WCE'
-# model = train_model(db, model_name, class_weights)
+model = train_model(db, model_name, class_weights)
 from batch_predict_unet import analyze_performance
 custom_objects = {'loss': weighted_pixelwise_crossentropy(class_weights), 'dice_coef':dice_coef}
 model = load_model('ptx_model_' + model_name + '.hdf5', custom_objects=custom_objects)
