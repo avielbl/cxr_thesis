@@ -167,7 +167,7 @@ def train_model(db, model_name, class_weights=(1, 1)):
     model_checkpoint = ModelCheckpoint(model_file_name, monitor='val_loss', mode='min', save_best_only=True, verbose=1)
     early_stopping = EarlyStopping(monitor='val_loss', mode='min', patience=10, verbose=1)
     reduce_lr_on_plateu = ReduceLROnPlateau(monitor='val_loss', mode='min', patience=5, factor=0.3, verbose=1)
-   # plot_curves_callback = PlotLearningCurves()
+    # plot_curves_callback = PlotLearningCurves()
     plot_curves_callback = PlotLearningCurves(metric_name='dice_coef')
     callbacks = [model_checkpoint, early_stopping, reduce_lr_on_plateu, plot_curves_callback]
     print('Transform masks to one-hot...')
