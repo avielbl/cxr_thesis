@@ -144,7 +144,7 @@ def get_unet(im_size, filters=64, filter_size=3, dropout_val=0.5,
                 padding='same', activation='relu')(conv_layer)
         return conv_layer
 
-    inputs = Input((im_size, im_size, 1))
+    inputs = Input((None, None, 1))
     conv1, pool1 = contraction_block(inputs, 1)
     conv2, pool2 = contraction_block(pool1, 2)
     conv3, pool3 = contraction_block(pool2, 4)
