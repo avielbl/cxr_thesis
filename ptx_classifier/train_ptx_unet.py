@@ -174,7 +174,7 @@ def train_model(db, model_name, class_weights=(1, 1)):
     db[1] = categorize(db[1])
     db[3] = categorize(db[3])
     print('Start fitting...')
-    model.fit(db[0], db[1], batch_size=5, epochs=100,
+    model.fit(db[0], db[1], batch_size=2, epochs=100,
               validation_data=(db[2], db[3]),
               verbose=1, shuffle=True,
               callbacks=callbacks,
@@ -217,11 +217,11 @@ with open('class_weights_fcn_classifier.pkl', 'wb') as f:
 # model_name = 'U-Net_DICE'
 model_name = 'U-Net_WCE'
 model = train_model(db, model_name, class_weights)
-from batch_predict_unet import analyze_performance
-custom_objects = {'loss': weighted_pixelwise_crossentropy(class_weights), 'dice_coef':dice_coef}
-model = load_model('ptx_model_' + model_name + '.hdf5', custom_objects=custom_objects)
-plot_model(model)
-
-analyze_performance(model=None, val_data=(db[2], db[3]),
-                    model_name=model_name,
-                    custom_objects=custom_objects)
+# from batch_predict_unet import analyze_performance
+# custom_objects = {'loss': weighted_pixelwise_crossentropy(class_weights), 'dice_coef':dice_coef}
+# model = load_model('ptx_model_' + model_name + '.hdf5', custom_objects=custom_objects)
+# plot_model(model)
+#
+# analyze_performance(model=None, val_data=(db[2], db[3]),
+#                     model_name=model_name,
+#                     custom_objects=custom_objects)
