@@ -9,12 +9,14 @@ from keras.layers import Conv2D
 from keras.optimizers import Adam
 
 from CXRLoadNPrep import load_dicom
-from aid_funcs.misc import load_from_h5
-from aid_funcs.keraswrapper import load_model, PlotLearningCurves, dice_coef_loss, dice_coef
+from aid_funcs.misc import load_from_h5, printProgressBar
+from aid_funcs.keraswrapper import load_model, PlotLearningCurves, dice_coef_loss, dice_coef, get_class_weights, \
+    weighted_pixelwise_crossentropy
+from image import imresize, im_rescale
 from ptx_classifier.utils import *
 
 # Setting folders
-current_path = r"C:\projects\CXR_thesis\ptx_classifier"
+current_path = os.path.split(__file__)[0]
 train_images_path = os.path.join(current_path, "train_images")
 train_masks_path = os.path.join(current_path, "train_masks")
 val_images_path = os.path.join(current_path, "val_images")
@@ -54,6 +56,7 @@ def load_and_prep_data():
         # read orig dicom and resize to square 1024 pixels
         img = load_dicom(curr_img_path)
         img = image.imresize(img, (1024, 1024))
+        img = im_rescale(img, 0, 255)
         mask = np.zeros((1024, 1024))
         lung_path = os.path.join(lung_seg_path, img_name + '.png')
 
@@ -61,7 +64,7 @@ def load_and_prep_data():
             # Loading lung mask
             lung_mask = cv2.imread(lung_path, cv2.IMREAD_GRAYSCALE)
             lung_mask = image.imresize(lung_mask, img.shape)
-            mask[lung_mask > 0] = 1
+            mask[lung_mask > 0] = 127
             # Loading ptx mask if exist
             ptx_path = os.path.join(ptx_masks_path, img_name + '.png')
             if os.path.isfile(ptx_path):
@@ -70,7 +73,7 @@ def load_and_prep_data():
                 ptx_mask[lung_mask == 0] = 0
             else:
                 ptx_mask = np.zeros((1024, 1024))
-            mask[ptx_mask > 0] = 2
+            mask[ptx_mask > 0] = 255
             if im_count in val_idx:
                 out_images = val_images_path
                 out_masks = val_masks_path
@@ -104,14 +107,16 @@ def pre_process_data(images_path, masks_path):
     nb_images = len(images_list)
     images_arr = np.zeros((nb_images, im_size, im_size, 1), np.float32)
     masks_arr = np.zeros((nb_images, im_size, im_size, 1), np.uint8)
+    printProgressBar(0, nb_images, prefix='Progress:', suffix='Complete', bar_length=50)
+
     for i in range(nb_images):
         # Loading image and mask
-        image = cv2.imread(os.path.join(images_path, images_list[i]), cv2.IMREAD_GRAYSCALE)
-        mask = cv2.imread(os.path.join(masks_path, masks_list[i]), cv2.IMREAD_GRAYSCALE)
+        image = cv2.imread(os.path.join(images_path, images_list[i]), -1)
+        mask = cv2.imread(os.path.join(masks_path, masks_list[i]), -1)
         # Cropping around lungs and resize
         image, mask = get_lung_bb(image, mask)
-        image = image.imresize(image, (im_size, im_size))
-        mask = image.imresize(mask, (im_size, im_size))
+        image = imresize(image, (im_size, im_size))
+        mask = imresize(mask, (im_size, im_size))
 
         # Normalizing intensity based on lung pixels only
         nan_img = image.copy()
@@ -119,13 +124,18 @@ def pre_process_data(images_path, masks_path):
         nan_img[mask == 0] = np.nan
         mean_val = np.nanmean(nan_img)
         std_val = np.nanstd(nan_img)
+        if std_val < 1e-2:
+            print('std small')
         out_img = image.copy().astype(np.float32)
         out_img -= mean_val
         out_img /= std_val
 
         images_arr[i, :, :, 0] = out_img
+        mask[mask < 255] = 0
         mask[mask > 0] = 1
         masks_arr[i, :, :, 0] = mask
+        printProgressBar(i + 1, nb_images, prefix='Progress:', suffix='Complete', bar_length=50)
+
     return images_arr, masks_arr
 
 
@@ -155,21 +165,28 @@ def load_old_data():
 
 
 def create_model():
-    base_model = load_model(r"C:\projects\CXR_thesis\new_lung_segmentation\lung_seg_model_12_54_20_05_2018.hdf5",
+    print('Loading lung seg model..')
+    base_model = load_model(r"C:\Users\admin\PycharmProjects\CXR_thesis\new_lung_segmentation\lung_seg_model.hdf5",
                             custom_objects='dice_coef_loss')
     # new_inputs_layer = Input((512, 512, 1))
     # base_model.layers[0] = new_inputs_layer
     x = base_model.get_layer('dropout_2').output
-    prediction = Conv2D(1, (1, 1), activation='sigmoid', kernel_initializer='he_normal', name='prediction')(x)
+    prediction = Conv2D(2, (1, 1), activation='softmax', kernel_initializer='he_normal', name='prediction')(x)
 
     return Model(inputs=base_model.input, outputs=prediction)
 
 
 def train_model(model, db):
     nb_epochs = 100
-    batch_size = 2
+    batch_size = 5
     lr = 0.0001
-    model.compile(optimizer=Adam(lr=lr), loss=dice_coef_loss, metrics=[dice_coef])
+    print('Calculating class weights..')
+    class_weights = get_class_weights(db[1])
+    # class_weights = [1., 10.]
+    db[1] = categorize(db[1])
+    db[3] = categorize(db[3])
+
+    model.compile(optimizer=Adam(lr=lr), loss=weighted_pixelwise_crossentropy(class_weights), metrics=[dice_coef])
 
     time_strftime = time.strftime("%H_%M_%d_%m_%Y")
     model_file_name = 'ptx_unet_based_on_lungsegmodel_' + time_strftime + '.hdf5'
@@ -179,14 +196,23 @@ def train_model(model, db):
     plot_curves_callback = PlotLearningCurves(metric_name='dice_coef')
 
     model.fit(db[0], db[1], batch_size=batch_size, epochs=nb_epochs,
-            verbose=1, shuffle=True, validation_data=(db[2], db[3]),
-            callbacks=[model_checkpoint, early_stopping, reduce_lr_on_plateu, plot_curves_callback])
+              verbose=1, shuffle=True, validation_data=(db[2], db[3]),
+              callbacks=[model_checkpoint, early_stopping, reduce_lr_on_plateu, plot_curves_callback])
+
+
+def categorize(arr):
+    out = np.zeros((arr.shape[0], arr.shape[1], arr.shape[2], 2), dtype=np.uint8)
+    out[:, :, :, 0] = (1 - arr).squeeze()
+    out[:, :, :, 1] = arr.squeeze()
+    return out
 
 
 def main():
-    load_and_prep_data()
-    augment_data()
+    # load_and_prep_data()
+    # augment_data()
+    print('Pre-processing training set..')
     train_images_arr, train_masks_arr = pre_process_data(augmented_images_path, augmented_masks_path)
+    print('Pre-processing validation set..')
     val_images_arr, val_masks_arr = pre_process_data(val_images_path, val_masks_path)
     # db = load_old_data()
     model = create_model()
