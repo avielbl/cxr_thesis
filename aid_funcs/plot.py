@@ -61,7 +61,7 @@ def show_image_with_overlay(img, overlay, overlay2=None, title_str='', alpha=0.3
     if overlay2 is None:
         overlay2 = np.zeros(img.shape)
     overlay2 = overlay2.astype(bool)
-    overlay2_color = [0, 255, 0]
+    overlay2_color = [0, 0, 255]
     overlay2_rgb = out_img_rgb.copy()
     overlay2_rgb[overlay2] = overlay2_color
     cv2.addWeighted(out_img_rgb, alpha, overlay2_rgb, 1-alpha, 0, out_img_rgb)
