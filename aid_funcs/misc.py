@@ -182,7 +182,7 @@ def roc_plotter(gt, scores, title, plot_thresh=False):
     opt_thresh = thresh[opt_ind]
 
     # plotting the roc
-    fig = plt.figure(1)
+    fig = plt.figure()
     plt.plot(fpr, tpr, label='ROC')
     if plot_thresh:
         plt.plot(fpr, thresh, label='Threshold')
