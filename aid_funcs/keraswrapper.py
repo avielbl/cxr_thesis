@@ -44,17 +44,46 @@ def load_model(model_path, custom_objects=None):
         return keras_load_model(model_path, custom_objects=custom_objects)
 
 
-def focal_loss(gamma=2., alpha=.25):
+def focal_loss(alpha=0.25, gamma=2.0):
     def focal_loss_fixed(y_true, y_pred):
-        eps = 1e-12
-        y_pred = K.clip(y_pred, eps,
-                        1. - eps)  # improve the stability of the focal loss and see issues 1 for more information
-        pt_1 = tf.where(tf.equal(y_true, 1), y_pred, tf.ones_like(y_pred))
-        pt_0 = tf.where(tf.equal(y_true, 0), y_pred, tf.zeros_like(y_pred))
-        return -K.sum(alpha * K.pow(1. - pt_1, gamma) * K.log(pt_1)) - K.sum(
-                (1 - alpha) * K.pow(pt_0, gamma) * K.log(1. - pt_0))
+        labels = y_true
+        classification = y_pred
+
+        # filter out "ignore" anchors
+        anchor_state = keras.backend.max(labels, axis=2)  # -1 for ignore, 0 for background, 1 for object
+        indices = tf.where(keras.backend.not_equal(anchor_state, -1))
+        labels = tf.gather_nd(labels, indices)
+        classification = tf.gather_nd(classification, indices)
+
+        # compute the focal loss
+        alpha_factor = keras.backend.ones_like(labels) * alpha
+        alpha_factor = tf.where(keras.backend.equal(labels, 1), alpha_factor, 1 - alpha_factor)
+        focal_weight = tf.where(keras.backend.equal(labels, 1), 1 - classification, classification)
+        focal_weight = alpha_factor * focal_weight ** gamma
+
+        cls_loss = focal_weight * keras.backend.binary_crossentropy(labels, classification)
+
+        # compute the normalizer: the number of positive anchors
+        normalizer = tf.where(keras.backend.equal(anchor_state, 1))
+        normalizer = keras.backend.cast(keras.backend.shape(normalizer)[0], keras.backend.floatx())
+        normalizer = keras.backend.maximum(1.0, normalizer)
+
+        return keras.backend.sum(cls_loss) / normalizer
 
     return focal_loss_fixed
+
+
+# def focal_loss(gamma=2., alpha=.25):
+#     def focal_loss_fixed(y_true, y_pred):
+#         eps = 1e-12
+#         y_pred = K.clip(y_pred, eps,
+#                         1. - eps)  # improve the stability of the focal loss and see issues 1 for more information
+#         pt_1 = tf.where(tf.equal(y_true, 1), y_pred, tf.ones_like(y_pred))
+#         pt_0 = tf.where(tf.equal(y_true, 0), y_pred, tf.zeros_like(y_pred))
+#         return -K.sum(alpha * K.pow(1. - pt_1, gamma) * K.log(pt_1)) - K.sum(
+#                 (1 - alpha) * K.pow(pt_0, gamma) * K.log(1. - pt_0))
+#
+#     return focal_loss_fixed
 
 
 def dice_coef(y_true, y_pred):
@@ -126,13 +155,13 @@ def get_unet(im_size, filters=64, filter_size=3, dropout_val=0.5,
         :return: tuple of (conv_layer, pool_layer)
         '''
         conv_layer = Conv2D(filters * filters_mult,
-                (filter_size, filter_size),
-                kernel_initializer='he_normal',
-                padding='same', activation='relu')(in_layer)
+                            (filter_size, filter_size),
+                            kernel_initializer='he_normal',
+                            padding='same', activation='relu')(in_layer)
         conv_layer = Conv2D(filters * filters_mult,
-                (filter_size, filter_size),
-                kernel_initializer='he_normal',
-                padding='same', activation='relu')(conv_layer)
+                            (filter_size, filter_size),
+                            kernel_initializer='he_normal',
+                            padding='same', activation='relu')(conv_layer)
         pool_layer = MaxPooling2D(pool_size=(2, 2))(conv_layer)
         return conv_layer, pool_layer
 
@@ -148,13 +177,13 @@ def get_unet(im_size, filters=64, filter_size=3, dropout_val=0.5,
         '''
         up_layer = concatenate([UpSampling2D(size=(2, 2))(low_res_layer), high_res_layer], axis=3)
         conv_layer = Conv2D(filters * filters_mult,
-                (filter_size, filter_size),
-                kernel_initializer='he_normal',
-                padding='same', activation='relu')(up_layer)
+                            (filter_size, filter_size),
+                            kernel_initializer='he_normal',
+                            padding='same', activation='relu')(up_layer)
         conv_layer = Conv2D(filters * filters_mult,
-                (filter_size, filter_size),
-                kernel_initializer='he_normal',
-                padding='same', activation='relu')(conv_layer)
+                            (filter_size, filter_size),
+                            kernel_initializer='he_normal',
+                            padding='same', activation='relu')(conv_layer)
         return conv_layer
 
     inputs = Input((None, None, 1))
@@ -206,7 +235,7 @@ def make_mosaic(imgs, nrows, ncols, border=1):
 
     mosaic = ma.masked_all((nrows * imshape[0] + (nrows - 1) * border,
                             ncols * imshape[1] + (ncols - 1) * border),
-            dtype=np.float32)
+                           dtype=np.float32)
 
     paddedh = imshape[0] + border
     paddedw = imshape[1] + border
