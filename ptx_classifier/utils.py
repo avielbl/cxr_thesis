@@ -102,6 +102,13 @@ def normalize_img(img):
     return out_img
 
 
+def normalize_arr(arr):
+    mean_val = np.mean(arr)
+    std_val = np.std(arr)
+    arr_out = (arr - mean_val) / std_val
+    return arr_out
+
+
 def crop_n_resize(case, bb):
     bb = np.clip(bb, 0, case.img.shape[0])
     img = case.img[bb[0]:bb[2], bb[1]:bb[3]]
