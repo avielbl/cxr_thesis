@@ -14,59 +14,88 @@ from keras.optimizers import Adam, SGD
 from keras.applications.vgg16 import VGG16
 from keras.utils import to_categorical
 
-from aid_funcs.image import imresize, im_rescale
+from aid_funcs.image import imresize, im_rescale, im_array_resize
 from aid_funcs.misc import load_from_h5, save_to_h5
+from train_ptx_unet_based_on_lungsegmodel import pre_process_data, augmented_train_images_path, \
+    augmented_train_masks_path, augmented_val_images_path, augmented_val_masks_path
 from utilfuncs import seperate_lungs
-from utils import *
+from ptx_classifier.utils import *
 from aid_funcs.keraswrapper import load_model, get_class_weights, weighted_pixelwise_crossentropy, dice_coef, \
     PlotLearningCurves
 from prep_data_for_unet import get_lung_masks, prep_set
+
 im_sz = 104
 
 
 def prep_set_for_global_classifier():
     print('Loading data...')
-    train_data_lst, val_data_lst = process_and_augment_data()
-    train_imgs_arr, train_masks_arr = prep_set(train_data_lst)
-    val_imgs_arr, val_masks_arr = prep_set(val_data_lst)
+    print('Pre-processing training set..')
+    train_images_arr, train_masks_arr, _ = pre_process_data(augmented_train_images_path, augmented_train_masks_path)
+    print('Pre-processing validation set..')
+    val_images_arr, val_masks_arr, val_lung_masks_arr = pre_process_data(augmented_val_images_path,
+            augmented_val_masks_path)
+
+    # train_data_lst, val_data_lst = process_and_augment_data()
+    # train_imgs_arr, train_masks_arr = prep_set(train_data_lst)
+    # val_imgs_arr, val_masks_arr = prep_set(val_data_lst)
 
     db = [
-        train_imgs_arr,
+        train_images_arr,
         train_masks_arr,
-        val_imgs_arr,
+        val_images_arr,
         val_masks_arr
     ]
 
-    db[0] = np.rollaxis(db[0], 1, 4)
-    db[1] = np.rollaxis(db[1], 1, 4)
-    db[2] = np.rollaxis(db[2], 1, 4)
-    db[3] = np.rollaxis(db[3], 1, 4)
+    nb_train = train_masks_arr.shape[0]
+    nb_val = val_masks_arr.shape[0]
+
+    train_labels = [np.uint8(np.sum(train_masks_arr[i]) > 0) for i in range(nb_train)]
+    val_labels = [np.uint8(np.sum(val_masks_arr[i]) > 0) for i in range(nb_val)]
+
+    # db[0] = np.rollaxis(db[0], 1, 4)
+    # db[1] = np.rollaxis(db[1], 1, 4)
+    # db[2] = np.rollaxis(db[2], 1, 4)
+    # db[3] = np.rollaxis(db[3], 1, 4)
 
     model_name = 'U-Net_WCE'
-    class_weights = get_class_weights(db[1])
+    # class_weights = get_class_weights(db[1])
+    class_weights = [1., 10.]
+
     custom_objects = {'loss': weighted_pixelwise_crossentropy(class_weights), 'dice_coef': dice_coef}
-    model = load_model('ptx_model_' + model_name + '.hdf5', custom_objects=custom_objects)
+    model = load_model('ptx_unet_based_on_lungsegmodel_WCE' + '.hdf5', custom_objects=custom_objects)
 
     train_scores_maps = model.predict(db[0], batch_size=5, verbose=1)
     train_scores_maps = train_scores_maps[:, :, :, 1]  # Taking only scores for ptx
+    train_scores_maps = im_array_resize(train_scores_maps, (im_size, im_size))
     val_scores_maps = model.predict(db[2], batch_size=5, verbose=1)
     val_scores_maps = val_scores_maps[:, :, :, 1]  # Taking only scores for ptx
+    val_scores_maps = im_array_resize(val_scores_maps, (im_size, im_size))
 
-    train_l_scores, train_r_scores, train_l_labels, train_r_labels = \
-        separate_maps_to_lungs(train_data_lst, train_scores_maps, db[1])
-    val_l_scores, val_r_scores, val_l_labels, val_r_labels = \
-        separate_maps_to_lungs(val_data_lst, val_scores_maps, db[3])
+    orig_train_images = im_array_resize(train_images_arr, (im_size, im_size))
+    orig_val_images = im_array_resize(val_images_arr, (im_size, im_size))
 
-    train_l_orig_images, train_r_orig_images = \
-        separate_maps_to_lungs(train_data_lst, train_imgs_arr)
-    val_l_orig_images, val_r_orig_images = \
-        separate_maps_to_lungs(val_data_lst, val_imgs_arr)
-    save_to_h5((train_l_scores, train_r_scores), os.path.join(training_path, 'train_scores_maps_arr.h5'))
-    save_to_h5((val_l_scores, val_r_scores), os.path.join(training_path, 'val_scores_maps_arr.h5'))
-    save_to_h5((train_l_orig_images, train_r_orig_images), os.path.join(training_path, 'train_orig_images_arr.h5'))
-    save_to_h5((val_l_orig_images, val_r_orig_images), os.path.join(training_path, 'val_orig_images_arr.h5'))
-    save_to_h5((train_l_labels, train_r_labels), os.path.join(training_path, 'train_global_label_arr.h5'))
-    save_to_h5((val_l_labels, val_r_labels), os.path.join(training_path, 'val_global_label_arr.h5'))
+    train_scores_maps = normalize_arr(train_scores_maps)
+    val_scores_maps = normalize_arr(val_scores_maps)
+
+    train_data = np.concatenate((orig_train_images, train_scores_maps), 3)
+    val_data = np.concatenate((orig_val_images, val_scores_maps), 3)
+
+    # train_l_scores, train_r_scores, train_l_labels, train_r_labels = \
+    #     separate_maps_to_lungs(train_data_lst, train_scores_maps, db[1])
+    # val_l_scores, val_r_scores, val_l_labels, val_r_labels = \
+    #     separate_maps_to_lungs(val_data_lst, val_scores_maps, db[3])
+    #
+    # train_l_orig_images, train_r_orig_images = \
+    #     separate_maps_to_lungs(train_data_lst, train_imgs_arr)
+    # val_l_orig_images, val_r_orig_images = \
+    #     separate_maps_to_lungs(val_data_lst, val_imgs_arr)
+    # save_to_h5((train_l_scores, train_r_scores), os.path.join(training_path, 'train_scores_maps_arr.h5'))
+    # save_to_h5((val_l_scores, val_r_scores), os.path.join(training_path, 'val_scores_maps_arr.h5'))
+    # save_to_h5((train_l_orig_images, train_r_orig_images), os.path.join(training_path, 'train_orig_images_arr.h5'))
+    # save_to_h5((val_l_orig_images, val_r_orig_images), os.path.join(training_path, 'val_orig_images_arr.h5'))
+    # save_to_h5((train_l_labels, train_r_labels), os.path.join(training_path, 'train_global_label_arr.h5'))
+    # save_to_h5((val_l_labels, val_r_labels), os.path.join(training_path, 'val_global_label_arr.h5'))
+    return train_data, train_labels, val_data, val_labels
 
 
 def separate_maps_to_lungs(data_lst, images_arr, labels_maps=None):
@@ -107,7 +136,7 @@ def seperate_and_process_case_to_lungs(img_arr, lung_mask):
 
 def build_model_vgg16_based(nb_epochs):
     base_model = VGG16(weights='imagenet', include_top=False,
-                       input_shape=(im_sz, im_sz, 3))
+            input_shape=(im_sz, im_sz, 3))
 
     for layer in base_model.layers:
         layer.trainable = False
@@ -123,8 +152,8 @@ def build_model_vgg16_based(nb_epochs):
     from keras.optimizers import SGD
     sgd = SGD(lr=0.1, decay=1e-6, momentum=0.9, nesterov=True)
     model.compile(optimizer=sgd,
-                  loss='binary_crossentropy',
-                  metrics=['accuracy'])
+            loss='binary_crossentropy',
+            metrics=['accuracy'])
 
     # model.compile(loss='binary_crossentropy',
     #               optimizer=optim_fun,
@@ -167,68 +196,97 @@ def build_model(nb_epochs):
     return model
 
 
-def train_model(side):
+# def train_model(side):
+#
+#     if side == 'left':
+#         side_ind = 0
+#     else:
+#         side_ind = 1
+#     print('Loading data...')
+#     ##preping data for vgg16
+#     # for i in range(db[0].shape[0]):
+#     #     db[0][i,:,:,0] = im_rescale(db[0][i].squeeze(), -127, 127)
+#     # for i in range(db[2].shape[0]):
+#     #     db[2][i,:,:,0] = im_rescale(db[2][i].squeeze(), -127, 127)
+#
+#     # db[0] = np.repeat(db[0], 3, 3)
+#     # db[2] = np.repeat(db[2], 3, 3)
+#
+#     # Normalizing and resizing orig images
+#     mean_val = np.mean(db[4][side_ind])
+#     std_val = np.std(db[4][side_ind])
+#     db[4][side_ind] -= mean_val
+#     db[5][side_ind] -= mean_val
+#     db[4][side_ind] /= std_val
+#     db[5][side_ind] /= std_val
+#
+#     nb_train = db[4][side_ind].shape[0]
+#     nb_val = db[5][side_ind].shape[0]
+#     train_orig_imgs = np.zeros((nb_train, im_sz, im_sz, 1))
+#     val_orig_imgs = np.zeros((nb_val, im_sz, im_sz, 1))
+#     for i in range(db[4][side_ind].shape[0]):
+#         train_orig_imgs[i,:,:,0] = imresize(db[4][side_ind][i].squeeze(), (im_sz, im_sz))
+#     for i in range(db[5][side_ind].shape[0]):
+#         val_orig_imgs[i,:,:,0] = imresize(db[5][side_ind][i].squeeze(), (im_sz, im_sz))
+#
+#
+#     # Normalizing and resizing score maps
+#     mean_val = np.mean(db[0][side_ind])
+#     std_val = np.std(db[0][side_ind])
+#     db[0][side_ind] -= mean_val
+#     db[2][side_ind] -= mean_val
+#     db[0][side_ind] /= std_val
+#     db[2][side_ind] /= std_val
+#
+#     nb_train = db[0][side_ind].shape[0]
+#     nb_val = db[2][side_ind].shape[0]
+#     train_imgs = np.zeros((nb_train, im_sz, im_sz, 1))
+#     val_imgs = np.zeros((nb_val, im_sz, im_sz, 1))
+#     for i in range(db[0][side_ind].shape[0]):
+#         train_imgs[i,:,:,0] = imresize(db[0][side_ind][i].squeeze(), (im_sz, im_sz))
+#     for i in range(db[2][side_ind].shape[0]):
+#         val_imgs[i,:,:,0] = imresize(db[2][side_ind][i].squeeze(), (im_sz, im_sz))
+#
+#     train_imgs = np.concatenate((train_imgs, train_orig_imgs), 3)
+#     val_imgs = np.concatenate((val_imgs, val_orig_imgs), 3)
+#     # Preparing model
+#     nb_epochs = 100
+#     batch_size = 200
+#     model = build_model(nb_epochs)
+#     # model = build_model_vgg16_based(nb_epochs)
+#     # model_name = 'global_scratch' + '_' + side
+#     model_name = 'global_scratch_2ch' + '_' + side
+#     # model_name = 'global_vgg16'
+#     model.summary()
+#     model_file_name = 'ptx_model_' + model_name + '.hdf5'
+#
+#     model_checkpoint = ModelCheckpoint(model_file_name, monitor='val_loss', mode='min', save_best_only=True, verbose=1)
+#     early_stopping = EarlyStopping(monitor='val_loss', mode='min', patience=10, verbose=1)
+#     reduce_lr_on_plateu = ReduceLROnPlateau(monitor='val_loss', mode='min', patience=5, factor=0.3, verbose=1)
+#     plot_curves_callback = PlotLearningCurves()
+#     callbacks = [model_checkpoint, early_stopping, reduce_lr_on_plateu, plot_curves_callback]
+#
+#
+#     # Fitting the model
+#     model.fit(train_imgs, to_categorical(db[1][side_ind], 2), batch_size=batch_size, epochs=nb_epochs,
+#               validation_data=(val_imgs, to_categorical(db[3][side_ind], 2)),
+#               verbose=1, shuffle=True,
+#               callbacks=callbacks)
+#
+#
+#     print("Done!")
 
-    if side == 'left':
-        side_ind = 0
-    else:
-        side_ind = 1
-    print('Loading data...')
-    ##preping data for vgg16
-    # for i in range(db[0].shape[0]):
-    #     db[0][i,:,:,0] = im_rescale(db[0][i].squeeze(), -127, 127)
-    # for i in range(db[2].shape[0]):
-    #     db[2][i,:,:,0] = im_rescale(db[2][i].squeeze(), -127, 127)
 
-    # db[0] = np.repeat(db[0], 3, 3)
-    # db[2] = np.repeat(db[2], 3, 3)
-
-    # Normalizing and resizing orig images
-    mean_val = np.mean(db[4][side_ind])
-    std_val = np.std(db[4][side_ind])
-    db[4][side_ind] -= mean_val
-    db[5][side_ind] -= mean_val
-    db[4][side_ind] /= std_val
-    db[5][side_ind] /= std_val
-
-    nb_train = db[4][side_ind].shape[0]
-    nb_val = db[5][side_ind].shape[0]
-    train_orig_imgs = np.zeros((nb_train, im_sz, im_sz, 1))
-    val_orig_imgs = np.zeros((nb_val, im_sz, im_sz, 1))
-    for i in range(db[4][side_ind].shape[0]):
-        train_orig_imgs[i,:,:,0] = imresize(db[4][side_ind][i].squeeze(), (im_sz, im_sz))
-    for i in range(db[5][side_ind].shape[0]):
-        val_orig_imgs[i,:,:,0] = imresize(db[5][side_ind][i].squeeze(), (im_sz, im_sz))
-
-
-    # Normalizing and resizing score maps
-    mean_val = np.mean(db[0][side_ind])
-    std_val = np.std(db[0][side_ind])
-    db[0][side_ind] -= mean_val
-    db[2][side_ind] -= mean_val
-    db[0][side_ind] /= std_val
-    db[2][side_ind] /= std_val
-
-    nb_train = db[0][side_ind].shape[0]
-    nb_val = db[2][side_ind].shape[0]
-    train_imgs = np.zeros((nb_train, im_sz, im_sz, 1))
-    val_imgs = np.zeros((nb_val, im_sz, im_sz, 1))
-    for i in range(db[0][side_ind].shape[0]):
-        train_imgs[i,:,:,0] = imresize(db[0][side_ind][i].squeeze(), (im_sz, im_sz))
-    for i in range(db[2][side_ind].shape[0]):
-        val_imgs[i,:,:,0] = imresize(db[2][side_ind][i].squeeze(), (im_sz, im_sz))
-
-    train_imgs = np.concatenate((train_imgs, train_orig_imgs), 3)
-    val_imgs = np.concatenate((val_imgs, val_orig_imgs), 3)
+def train_global(train_data, train_labels, val_data, val_labels):
     # Preparing model
     nb_epochs = 100
     batch_size = 200
     model = build_model(nb_epochs)
     # model = build_model_vgg16_based(nb_epochs)
     # model_name = 'global_scratch' + '_' + side
-    model_name = 'global_scratch_2ch' + '_' + side
+    model_name = 'global_scratch_2ch'
     # model_name = 'global_vgg16'
-    model.summary()
+    # model.summary()
     model_file_name = 'ptx_model_' + model_name + '.hdf5'
 
     model_checkpoint = ModelCheckpoint(model_file_name, monitor='val_loss', mode='min', save_best_only=True, verbose=1)
@@ -237,28 +295,29 @@ def train_model(side):
     plot_curves_callback = PlotLearningCurves()
     callbacks = [model_checkpoint, early_stopping, reduce_lr_on_plateu, plot_curves_callback]
 
-
     # Fitting the model
-    model.fit(train_imgs, to_categorical(db[1][side_ind], 2), batch_size=batch_size, epochs=nb_epochs,
-              validation_data=(val_imgs, to_categorical(db[3][side_ind], 2)),
-              verbose=1, shuffle=True,
-              callbacks=callbacks)
-
+    model.fit(train_data, to_categorical(train_labels, 2),
+            batch_size=batch_size,
+            epochs=nb_epochs,
+            validation_data=(val_data, to_categorical(val_labels, 2)),
+            verbose=1,
+            shuffle=True,
+            callbacks=callbacks)
 
     print("Done!")
 
 
 if __name__ == '__main__':
-    # prep_set_for_global_classifier()
+    train_data, train_labels, val_data, val_labels = prep_set_for_global_classifier()
+    train_global(train_data, train_labels, val_data, val_labels)
+    # db = [
+    #     load_from_h5(os.path.join(training_path, 'train_scores_maps_arr.h5')),
+    #     load_from_h5(os.path.join(training_path, 'train_global_label_arr.h5')).astype(np.uint8),
+    #     load_from_h5(os.path.join(training_path, 'val_scores_maps_arr.h5')),
+    #     load_from_h5(os.path.join(training_path, 'val_global_label_arr.h5')).astype(np.uint8),
+    #     load_from_h5(os.path.join(training_path, 'train_orig_images_arr.h5')),
+    #     load_from_h5(os.path.join(training_path, 'val_orig_images_arr.h5'))
+    # ]
 
-    db = [
-        load_from_h5(os.path.join(training_path, 'train_scores_maps_arr.h5')),
-        load_from_h5(os.path.join(training_path, 'train_global_label_arr.h5')).astype(np.uint8),
-        load_from_h5(os.path.join(training_path, 'val_scores_maps_arr.h5')),
-        load_from_h5(os.path.join(training_path, 'val_global_label_arr.h5')).astype(np.uint8),
-        load_from_h5(os.path.join(training_path, 'train_orig_images_arr.h5')),
-        load_from_h5(os.path.join(training_path, 'val_orig_images_arr.h5'))
-    ]
-
-    train_model('left')
-    train_model('right')
+    # train_model('left')
+    # train_model('right')
