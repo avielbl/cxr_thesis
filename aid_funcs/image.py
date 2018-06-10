@@ -34,6 +34,19 @@ def im_rescale(img, new_min=0.0, new_max=1.0):
     return out
 
 
+def im_array_resize(im_arr, newsz, interp=1):
+    nb_images = im_arr.shape[0]
+    if im_arr.ndim == 3:
+        im_arr = np.expand_dims(im_arr, 3)
+    nb_channels = im_arr.shape[3]
+    out_arr = np.zeros((nb_images, newsz[0], newsz[1], nb_channels), dtype=im_arr.dtype)
+
+    for i in range(nb_images):
+        out_arr[i] = imresize(im_arr[i], newsz, interp)
+
+    return out_arr
+
+
 def imresize(img, newsz, interp=1):
     """
     Performing image resize to a given new size or by a given factor and by selecting the
